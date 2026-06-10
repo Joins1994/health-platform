@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理后台登录 - 健康成长互动平台</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-box">
+      <h1>🌱 健康成长互动平台</h1>
+      <p>管理后台登录</p>
+      
+      <form id="login-form" onsubmit="return doLogin(event)">
+        <div class="form-group">
+          <label class="form-label">用户名</label>
+          <input type="text" class="form-input" id="username" required placeholder="请输入用户名">
+        </div>
+        <div class="form-group">
+          <label class="form-label">密码</label>
+          <input type="password" class="form-input" id="password" required placeholder="请输入密码">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="login-btn">
+          登录
+        </button>
+      </form>
+      
+      <div class="text-center mt-2 text-sm text-muted">
+        默认账号: admin / admin123
+      </div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    async function doLogin(event) {
+      event.preventDefault();
+      
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const btn = document.getElementById('login-btn');
+      
+      btn.disabled = true;
+      btn.textContent = '登录中...';
+      
+      try {
+        const res = await fetch('/admin/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await res.json();
+        
+        if (data.token) {
+          AdminAuth.setToken(data.token);
+          location.href = 'dashboard.html';
+        } else {
+          AdminUtils.showToast(data.error || '登录失败', 'error');
+          btn.disabled = false;
+          btn.textContent = '登录';
+        }
+      } catch (err) {
+        AdminUtils.showToast('登录失败', 'error');
+        btn.disabled = false;
+        btn.textContent = '登录';
+      }
+      
+      return false;
+    }
+  </script>
+</body>
+</html>

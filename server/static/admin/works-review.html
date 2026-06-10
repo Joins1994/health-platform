@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>作品审核 - 管理后台</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <div id="sidebar-container"></div>
+    
+    <div class="main-content">
+      <div class="page-header">
+        <h2>🎨 作品审核</h2>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary ${location.search.includes('pending') || !location.search ? 'active' : ''}" onclick="filterWorks('pending')">待审核</button>
+          <button class="btn btn-outline" onclick="filterWorks('approved')">已通过</button>
+          <button class="btn btn-outline" onclick="filterWorks('rejected')">已拒绝</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>作品标题</th>
+                <th>作者</th>
+                <th>学校</th>
+                <th>票数</th>
+                <th>提交时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="works-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 作品详情弹窗 -->
+  <div class="modal-overlay hidden" id="detail-modal">
+    <div class="modal-content" style="max-width:600px;">
+      <div class="modal-header">
+        <h3>作品详情</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div id="work-detail"></div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    if (!AdminAuth.checkAuth()) {
+      location.href = 'login.html';
+    }
+
+    let currentStatus = 'pending';
+
+    function filterWorks(status) {
+      currentStatus = status;
+      loadWorks();
+    }
+
+    async function loadWorks() {
+      try {
+        const works = await AdminAPI.get(`/admin/api/works?status=${currentStatus}`);
+        const tbody = document.getElementById('works-table');
+        
+        if (works.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">暂无${currentStatus === 'pending' ? '待审核' : currentStatus === 'approved' ? '已通过' : '已拒绝'}作品</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = works.map(w => `
+          <tr>
+            <td>${w.id}</td>
+            <td><a href="#" onclick="showDetail(${w.id}); return false;" style="color:var(--primary);">${w.title}</a></td>
+            <td>${w.author_name || '匿名'}</td>
+            <td>${w.school || '-'}</td>
+            <td>${w.votes}</td>
+            <td>${AdminUtils.formatDate(w.created_at)}</td>
+            <td>
+              ${currentStatus === 'pending' ? `
+                <button class="btn btn-success btn-sm mr-1" onclick="reviewWork(${w.id}, 'approved')">通过</button>
+                <button class="btn btn-danger btn-sm" onclick="reviewWork(${w.id}, 'rejected')">拒绝</button>
+              ` : `<span class="badge badge-${currentStatus === 'approved' ? 'success' : 'error'}">${currentStatus === 'approved' ? '已通过' : '已拒绝'}</span>`}
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('加载作品失败:', err);
+      }
+    }
+
+    async function showDetail(id) {
+      try {
+        const works = await AdminAPI.get(`/admin/api/works?status=${currentStatus}`);
+        const work = works.find(w => w.id === id);
+        if (!work) return;
+
+        const detail = document.getElementById('work-detail');
+        detail.innerHTML = `
+          <h4 class="mb-1">${work.title}</h4>
+          <p class="text-muted mb-2">${work.description || '暂无描述'}</p>
+          <p class="text-sm text-muted mb-2">作者：${work.author_name || '匿名'} · ${work.school || '未知学校'}</p>
+          ${work.images && work.images.length > 0 ? `
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:16px 0;">
+              ${work.images.map(img => `<img src="${img}" style="width:100%;border-radius:8px;cursor:pointer;" onclick="window.open('${img}')">`).join('')}
+            </div>
+          ` : '<p class="text-muted">无图片</p>'}
+          <div style="display:flex;gap:8px;margin-top:16px;">
+            ${currentStatus === 'pending' ? `
+              <button class="btn btn-success" onclick="reviewWork(${work.id}, 'approved'); closeModal();">通过</button>
+              <button class="btn btn-danger" onclick="reviewWork(${work.id}, 'rejected'); closeModal();">拒绝</button>
+            ` : ''}
+          </div>
+        `;
+        
+        document.getElementById('detail-modal').classList.remove('hidden');
+      } catch (err) {
+        console.error('加载详情失败:', err);
+      }
+    }
+
+    async function reviewWork(id, status) {
+      try {
+        await AdminAPI.put(`/admin/api/works/${id}`, { status });
+        AdminUtils.showToast(status === 'approved' ? '已通过' : '已拒绝');
+        loadWorks();
+      } catch (err) {
+        AdminUtils.showToast('操作失败', 'error');
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('detail-modal').classList.add('hidden');
+    }
+
+    loadWorks();
+  </script>
+</body>
+</html>

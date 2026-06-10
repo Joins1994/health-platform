@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>提交作品 - 健康成长互动平台</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="page-content">
+    <div class="header">
+      <h1>📤 提交作品</h1>
+      <p>分享你的健康主题创意</p>
+    </div>
+
+    <div class="container">
+      <div class="card">
+        <form id="submit-form" onsubmit="return submitWork(event)">
+          <div class="form-group">
+            <label class="form-label">作品标题 *</label>
+            <input type="text" class="form-input" id="work-title" required maxlength="50" placeholder="给你的作品起个名字">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">作品介绍 *</label>
+            <textarea class="form-textarea" id="work-desc" required maxlength="500" placeholder="介绍你的作品（100-500字）"></textarea>
+            <div class="text-sm text-muted mt-1" style="text-align:right;"><span id="char-count">0</span>/500</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">上传图片（最多6张）</label>
+            <input type="file" class="form-input" id="work-images" accept="image/*" multiple onchange="previewImages(event)">
+            <div id="image-preview" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;"></div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block" id="submit-btn">
+            提交作品
+          </button>
+          <a href="works.html" class="btn btn-outline btn-block mt-1">返回作品列表</a>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const descInput = document.getElementById('work-desc');
+    const charCount = document.getElementById('char-count');
+    
+    descInput.addEventListener('input', () => {
+      charCount.textContent = descInput.value.length;
+    });
+
+    function previewImages(event) {
+      const files = event.target.files;
+      const preview = document.getElementById('image-preview');
+      preview.innerHTML = '';
+
+      if (files.length > 6) {
+        Utils.showToast('最多只能上传6张图片', 'error');
+        event.target.value = '';
+        return;
+      }
+
+      Array.from(files).forEach(file => {
+        if (file.size > 5 * 1024 * 1024) {
+          Utils.showToast('单张图片不能超过5MB', 'error');
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = document.createElement('img');
+          img.src = e.target.result;
+          img.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;';
+          preview.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function submitWork(event) {
+      event.preventDefault();
+      
+      const title = document.getElementById('work-title').value.trim();
+      const description = document.getElementById('work-desc').value.trim();
+      const images = document.getElementById('work-images').files;
+
+      if (!title || !description) {
+        Utils.showToast('请填写完整信息', 'error');
+        return false;
+      }
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = '提交中...';
+
+      try {
+        const formData = new FormData();
+        formData.append('openid', Auth.getOpenid());
+        formData.append('title', title);
+        formData.append('description', description);
+        
+        Array.from(images).forEach(file => {
+          formData.append('images', file);
+        });
+
+        const result = await API.postForm('/api/works', formData);
+        
+        if (result.success) {
+          Utils.showToast('提交成功！等待审核');
+          setTimeout(() => location.href = 'works.html', 1500);
+        } else {
+          throw new Error('提交失败');
+        }
+      } catch (err) {
+        Utils.showToast('提交失败，请重试', 'error');
+        btn.disabled = false;
+        btn.textContent = '提交作品';
+      }
+
+      return false;
+    }
+
+    initApp();
+  </script>
+</body>
+</html>

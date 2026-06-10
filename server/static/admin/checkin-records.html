@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>打卡记录 - 管理后台</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <div id="sidebar-container"></div>
+    
+    <div class="main-content">
+      <div class="page-header">
+        <h2>📅 打卡记录</h2>
+      </div>
+
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>用户</th>
+                <th>学校</th>
+                <th>第几天</th>
+                <th>任务</th>
+                <th>备注</th>
+                <th>打卡时间</th>
+              </tr>
+            </thead>
+            <tbody id="checkin-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    if (!AdminAuth.checkAuth()) {
+      location.href = 'login.html';
+    }
+
+    async function loadCheckinRecords() {
+      try {
+        const records = await AdminAPI.get('/admin/api/checkin-records');
+        const tbody = document.getElementById('checkin-table');
+        
+        if (records.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无记录</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = records.map(r => `
+          <tr>
+            <td>${r.id}</td>
+            <td>${r.name || '匿名'}</td>
+            <td>${r.school || '-'}</td>
+            <td>第${r.day_number}天</td>
+            <td>${r.task_title || '-'}</td>
+            <td class="text-sm">${r.proof || '-'}</td>
+            <td>${AdminUtils.formatDate(r.created_at)}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('加载打卡记录失败:', err);
+      }
+    }
+
+    loadCheckinRecords();
+  </script>
+</body>
+</html>

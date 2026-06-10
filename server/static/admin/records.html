@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>答题记录 - 管理后台</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <div id="sidebar-container"></div>
+    
+    <div class="main-content">
+      <div class="page-header">
+        <h2>📋 答题记录</h2>
+      </div>
+
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>用户</th>
+                <th>学校</th>
+                <th>年级</th>
+                <th>分类</th>
+                <th>得分</th>
+                <th>奖品</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody id="records-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    if (!AdminAuth.checkAuth()) {
+      location.href = 'login.html';
+    }
+
+    async function loadRecords() {
+      try {
+        const records = await AdminAPI.get('/admin/api/quiz-records');
+        const tbody = document.getElementById('records-table');
+        
+        if (records.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无记录</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = records.map(r => `
+          <tr>
+            <td>${r.id}</td>
+            <td>${r.name || '匿名'}</td>
+            <td>${r.school || '-'}</td>
+            <td>${r.grade || '-'}</td>
+            <td>${AdminUtils.getGradeLabel(r.category)}</td>
+            <td><span class="${r.score >= 3 ? 'text-primary' : 'text-muted'}" style="font-weight:600;">${r.score}/${r.total}</span></td>
+            <td>${r.prize ? `<span class="badge badge-accent">${r.prize}</span>` : '-'}</td>
+            <td>${AdminUtils.formatDate(r.created_at)}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('加载记录失败:', err);
+      }
+    }
+
+    loadRecords();
+  </script>
+</body>
+</html>

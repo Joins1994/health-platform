@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户管理 - 管理后台</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <div id="sidebar-container"></div>
+    
+    <div class="main-content">
+      <div class="page-header">
+        <h2>👥 用户管理</h2>
+      </div>
+
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>OpenID</th>
+                <th>姓名</th>
+                <th>学校</th>
+                <th>年级</th>
+                <th>班级</th>
+                <th>注册时间</th>
+              </tr>
+            </thead>
+            <tbody id="users-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    if (!AdminAuth.checkAuth()) {
+      location.href = 'login.html';
+    }
+
+    async function loadUsers() {
+      try {
+        const users = await AdminAPI.get('/admin/api/users');
+        const tbody = document.getElementById('users-table');
+        
+        if (users.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无用户</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = users.map(u => `
+          <tr>
+            <td>${u.id}</td>
+            <td class="text-sm">${u.openid?.substring(0, 20)}...</td>
+            <td>${u.name || '-'}</td>
+            <td>${u.school || '-'}</td>
+            <td>${u.grade || '-'}</td>
+            <td>${u.class || '-'}</td>
+            <td>${AdminUtils.formatDate(u.created_at)}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('加载用户失败:', err);
+      }
+    }
+
+    loadUsers();
+  </script>
+</body>
+</html>

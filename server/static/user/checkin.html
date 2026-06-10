@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>21天闯关打卡 - 健康成长互动平台</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="page-content">
+    <div class="header">
+      <h1>📅 21天健康闯关</h1>
+      <p>坚持打卡，养成健康好习惯</p>
+    </div>
+
+    <div class="container">
+      <!-- 进度概览 -->
+      <div class="card">
+        <div class="card-title">📊 我的进度</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <span class="text-sm">已完成 <strong id="completed-days">0</strong> / 21 天</span>
+          <span class="badge badge-primary" id="progress-percent">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-bar" style="width:0%"></div>
+        </div>
+        <div id="achievement-badge" class="text-center mt-2 hidden">
+          <span class="badge badge-accent" style="font-size:1rem;padding:8px 16px;">🏆 健康达人</span>
+        </div>
+      </div>
+
+      <!-- 21天打卡网格 -->
+      <div class="card">
+        <div class="card-title">📅 打卡日历</div>
+        <div class="checkin-grid" id="checkin-grid"></div>
+      </div>
+
+      <!-- 今日任务 -->
+      <div class="card" id="today-task-card">
+        <div class="card-title">🎯 今日任务</div>
+        <div id="today-task-content">
+          <p class="text-muted">加载中...</p>
+        </div>
+      </div>
+
+      <!-- 主题说明 -->
+      <div class="card">
+        <div class="card-title">📋 闯关主题</div>
+        <div class="text-sm">
+          <div class="mb-2">
+            <span class="badge badge-primary">第1-3天</span>
+            <span class="text-muted">睡眠充足 - 早睡早起，规律作息</span>
+          </div>
+          <div class="mb-2">
+            <span class="badge badge-primary">第4-6天</span>
+            <span class="text-muted">均衡饮食 - 营养早餐，多吃蔬果</span>
+          </div>
+          <div class="mb-2">
+            <span class="badge badge-primary">第7-9天</span>
+            <span class="text-muted">积极运动 - 户外运动，保护视力</span>
+          </div>
+          <div class="mb-2">
+            <span class="badge badge-primary">第10-12天</span>
+            <span class="text-muted">卫生习惯 - 正确洗手，口腔清洁</span>
+          </div>
+          <div class="mb-2">
+            <span class="badge badge-primary">第13-15天</span>
+            <span class="text-muted">心理健康 - 情绪管理，与人沟通</span>
+          </div>
+          <div class="mb-2">
+            <span class="badge badge-primary">第16-18天</span>
+            <span class="text-muted">安全自护 - 交通安全，网络安全</span>
+          </div>
+          <div>
+            <span class="badge badge-accent">第19-21天</span>
+            <span class="text-muted">总结提升 - 健康日记，习惯巩固</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="nav-bottom"></div>
+
+  <script src="js/app.js"></script>
+  <script>
+    let tasks = {};
+    let progress = {};
+    let completedDays = new Set();
+
+    async function loadTasks() {
+      try {
+        tasks = await API.get('/api/checkin/tasks');
+        renderCheckinGrid();
+      } catch (err) {
+        console.error('加载任务失败:', err);
+      }
+    }
+
+    async function loadProgress() {
+      try {
+        const openid = Auth.getOpenid();
+        progress = await API.get(`/api/checkin/progress?openid=${openid}`);
+        
+        completedDays = new Set(progress.records.map(r => r.day_number));
+        
+        document.getElementById('completed-days').textContent = progress.completedDays;
+        document.getElementById('progress-percent').textContent = progress.progress + '%';
+        document.getElementById('progress-bar').style.width = progress.progress + '%';
+        
+        if (progress.progress >= 100) {
+          document.getElementById('achievement-badge').classList.remove('hidden');
+        }
+        
+        renderCheckinGrid();
+        showTodayTask();
+      } catch (err) {
+        console.error('加载进度失败:', err);
+      }
+    }
+
+    function renderCheckinGrid() {
+      const grid = document.getElementById('checkin-grid');
+      grid.innerHTML = '';
+      
+      for (let i = 1; i <= 21; i++) {
+        const day = document.createElement('div');
+        day.className = 'checkin-day';
+        
+        if (completedDays.has(i)) {
+          day.classList.add('completed');
+        }
+        
+        const today = getCurrentDay();
+        if (i === today) {
+          day.classList.add('current');
+        }
+        
+        day.innerHTML = `
+          <span class="day-num">${i}</span>
+          <span style="font-size:0.7rem;">${completedDays.has(i) ? '✓' : ''}</span>
+        `;
+        
+        day.onclick = () => showDayTask(i);
+        grid.appendChild(day);
+      }
+    }
+
+    function getCurrentDay() {
+      // 获取当前是第几天（从活动开始日期计算）
+      // 这里简化处理，返回当前应该打卡的天数
+      const startDate = new Date('2026-06-01');
+      const today = new Date();
+      const diff = Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
+      return Math.max(1, Math.min(21, diff));
+    }
+
+    function showTodayTask() {
+      const today = getCurrentDay();
+      showDayTask(today);
+    }
+
+    function showDayTask(day) {
+      const dayTasks = tasks[day];
+      if (!dayTasks || dayTasks.length === 0) return;
+      
+      const task = dayTasks[0];
+      const isCompleted = completedDays.has(day);
+      const isToday = day === getCurrentDay();
+      
+      const content = document.getElementById('today-task-content');
+      content.innerHTML = `
+        <div style="margin-bottom:12px;">
+          <span class="badge ${isToday ? 'badge-accent' : 'badge-primary'}">
+            第${day}天
+          </span>
+          ${isCompleted ? '<span class="badge badge-primary">已完成</span>' : ''}
+        </div>
+        <h3 style="margin-bottom:8px;">${task.title}</h3>
+        <p class="text-muted mb-2">${task.description}</p>
+        
+        ${!isCompleted ? `
+          <div class="form-group">
+            <label class="form-label">打卡备注（可选）</label>
+            <textarea class="form-textarea" id="checkin-note" rows="2" placeholder="记录一下今天的完成情况..."></textarea>
+          </div>
+          <button class="btn btn-primary btn-block" onclick="doCheckin(${day}, ${task.id})">
+            ✅ 立即打卡
+          </button>
+        ` : `
+          <div class="alert alert-success">
+            ✅ 已完成打卡！继续保持！
+          </div>
+        `}
+      `;
+    }
+
+    async function doCheckin(dayNumber, taskId) {
+      const note = document.getElementById('checkin-note')?.value || '';
+      
+      try {
+        const formData = new FormData();
+        formData.append('openid', Auth.getOpenid());
+        formData.append('dayNumber', dayNumber);
+        formData.append('taskId', taskId);
+        formData.append('proof', note);
+
+        const result = await API.postForm('/api/checkin', formData);
+        
+        if (result.success) {
+          Utils.showToast('打卡成功！');
+          completedDays.add(dayNumber);
+          renderCheckinGrid();
+          showDayTask(dayNumber);
+          
+          // 更新进度
+          const completed = completedDays.size;
+          document.getElementById('completed-days').textContent = completed;
+          const percent = Math.round((completed / 21) * 100);
+          document.getElementById('progress-percent').textContent = percent + '%';
+          document.getElementById('progress-bar').style.width = percent + '%';
+          
+          if (percent >= 100) {
+            document.getElementById('achievement-badge').classList.remove('hidden');
+          }
+        }
+      } catch (err) {
+        const data = await err.json?.() || {};
+        Utils.showToast(data.error || '打卡失败', 'error');
+      }
+    }
+
+    initApp();
+    loadTasks();
+    loadProgress();
+  </script>
+</body>
+</html>

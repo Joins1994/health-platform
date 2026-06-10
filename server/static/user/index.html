@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>健康成长互动平台 - 中山市保健所</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="page-content">
+    <!-- 头部 -->
+    <div class="header">
+      <h1>🌱 健康成长互动平台</h1>
+      <p>中山市保健所 · 中小学生健康宣传活动</p>
+    </div>
+
+    <div class="container">
+      <!-- 活动公告 -->
+      <div class="card fade-in">
+        <div class="card-title">
+          <span class="icon">📢</span>
+          活动公告
+        </div>
+        <p class="text-sm">欢迎参加中山市保健所举办的中小学生健康宣传互动活动！通过答题、作品征集、21天打卡等形式，学习健康知识，养成良好习惯。</p>
+      </div>
+
+      <!-- 功能菜单 -->
+      <div class="menu-grid fade-in">
+        <a href="quiz.html" class="menu-item">
+          <div class="icon">📝</div>
+          <div class="title">健康知识答题</div>
+          <div class="desc">答题赢奖品</div>
+        </a>
+        <a href="works.html" class="menu-item">
+          <div class="icon">🎨</div>
+          <div class="title">作品征集</div>
+          <div class="desc">展示你的创意</div>
+        </a>
+        <a href="checkin.html" class="menu-item">
+          <div class="icon">📅</div>
+          <div class="title">21天闯关打卡</div>
+          <div class="desc">养成健康习惯</div>
+        </a>
+        <a href="winners.html" class="menu-item">
+          <div class="icon">🏆</div>
+          <div class="title">获奖名单</div>
+          <div class="desc">查看获奖信息</div>
+        </a>
+      </div>
+
+      <!-- 活动介绍 -->
+      <div class="card fade-in">
+        <div class="card-title">
+          <span class="icon">📋</span>
+          活动介绍
+        </div>
+        <div class="text-sm">
+          <p class="mb-1"><strong>1. 健康知识答题</strong></p>
+          <p class="mb-2 text-muted">根据年级选择对应题目，答对3题以上即可参与抽奖，赢取精美奖品。</p>
+          
+          <p class="mb-1"><strong>2. 作品征集</strong></p>
+          <p class="mb-2 text-muted">提交你的健康主题作品（绘画、手抄报、短视频等），参与投票评选。</p>
+          
+          <p class="mb-1"><strong>3. 21天健康闯关</strong></p>
+          <p class="text-muted">连续21天完成健康任务打卡，养成良好生活习惯，获得"健康达人"称号。</p>
+        </div>
+      </div>
+
+      <!-- 统计数据 -->
+      <div class="card fade-in">
+        <div class="card-title">
+          <span class="icon">📊</span>
+          活动数据
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;text-align:center;">
+          <div>
+            <div class="text-primary" style="font-size:1.5rem;font-weight:700;" id="stat-users">0</div>
+            <div class="text-sm text-muted">参与人数</div>
+          </div>
+          <div>
+            <div class="text-accent" style="font-size:1.5rem;font-weight:700;" id="stat-quiz">0</div>
+            <div class="text-sm text-muted">答题次数</div>
+          </div>
+          <div>
+            <div class="text-primary" style="font-size:1.5rem;font-weight:700;" id="stat-works">0</div>
+            <div class="text-sm text-muted">作品数量</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 管理后台入口 -->
+      <div class="card fade-in text-center">
+        <a href="/admin" style="color:var(--muted);text-decoration:none;font-size:0.85rem;">
+          🔐 管理后台入口
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div id="nav-bottom"></div>
+
+  <script src="js/app.js"></script>
+  <script>
+    // 加载统计数据
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/stats');
+        if (res.ok) {
+          const stats = await res.json();
+          document.getElementById('stat-users').textContent = stats.totalUsers || 0;
+          document.getElementById('stat-quiz').textContent = stats.totalQuiz || 0;
+          document.getElementById('stat-works').textContent = stats.totalWorks || 0;
+        }
+      } catch (err) {
+        console.error('加载统计失败:', err);
+      }
+    }
+
+    initApp();
+    loadStats();
+  </script>
+</body>
+</html>

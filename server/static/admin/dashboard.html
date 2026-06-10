@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>仪表盘 - 管理后台</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <div id="sidebar-container"></div>
+    
+    <div class="main-content">
+      <div class="page-header">
+        <h2>📊 仪表盘</h2>
+        <span class="text-muted">欢迎回来，管理员</span>
+      </div>
+
+      <!-- 统计卡片 -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon primary">👥</div>
+          <div class="stat-info">
+            <h3 id="stat-users">0</h3>
+            <p>总用户数</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon accent">📝</div>
+          <div class="stat-info">
+            <h3 id="stat-quiz">0</h3>
+            <p>答题次数</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon success">🎨</div>
+          <div class="stat-info">
+            <h3 id="stat-works">0</h3>
+            <p>作品数量</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon primary">📅</div>
+          <div class="stat-info">
+            <h3 id="stat-checkin">0</h3>
+            <p>打卡记录</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon error">⏳</div>
+          <div class="stat-info">
+            <h3 id="stat-pending">0</h3>
+            <p>待审核作品</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon accent">🎁</div>
+          <div class="stat-info">
+            <h3 id="stat-prizes">0</h3>
+            <p>剩余奖品</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 快捷入口 -->
+      <div class="card">
+        <div class="card-title">🚀 快捷入口</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <a href="questions.html" class="btn btn-primary">📝 题库管理</a>
+          <a href="works-review.html" class="btn btn-accent">🎨 作品审核</a>
+          <a href="prizes.html" class="btn btn-outline">🎁 奖品管理</a>
+          <a href="users.html" class="btn btn-outline">👥 用户管理</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    if (!AdminAuth.checkAuth()) {
+      location.href = 'login.html';
+    }
+
+    async function loadStats() {
+      try {
+        const stats = await AdminAPI.get('/api/stats');
+        document.getElementById('stat-users').textContent = stats.totalUsers || 0;
+        document.getElementById('stat-quiz').textContent = stats.totalQuiz || 0;
+        document.getElementById('stat-works').textContent = stats.totalWorks || 0;
+        document.getElementById('stat-checkin').textContent = stats.totalCheckin || 0;
+        document.getElementById('stat-pending').textContent = stats.pendingWorks || 0;
+        document.getElementById('stat-prizes').textContent = stats.totalPrizes || 0;
+      } catch (err) {
+        console.error('加载统计失败:', err);
+      }
+    }
+
+    loadStats();
+  </script>
+</body>
+</html>

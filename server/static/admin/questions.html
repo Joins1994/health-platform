@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>题库管理 - 管理后台</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <div id="sidebar-container"></div>
+    
+    <div class="main-content">
+      <div class="page-header">
+        <h2>📝 题库管理</h2>
+        <button class="btn btn-primary" onclick="showAddModal()">➕ 添加题目</button>
+      </div>
+
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>年级</th>
+                <th>类型</th>
+                <th>题目</th>
+                <th>答案</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="questions-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加题目弹窗 -->
+  <div class="modal-overlay hidden" id="add-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>添加题目</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <form id="add-form" onsubmit="return addQuestion(event)">
+        <div class="form-group">
+          <label class="form-label">年级分类</label>
+          <select class="form-select" id="q-category" required>
+            <option value="primary_low">小学低年级（1-3年级）</option>
+            <option value="primary_high">小学高年级（4-6年级）</option>
+            <option value="middle">初中（7-9年级）</option>
+            <option value="high">高中（10-12年级）</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">题目类型</label>
+          <select class="form-select" id="q-type" required onchange="updateOptionInputs()">
+            <option value="single">单选题</option>
+            <option value="multiple">多选题</option>
+            <option value="judge">判断题</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">题目内容</label>
+          <textarea class="form-textarea" id="q-question" rows="2" required placeholder="请输入题目"></textarea>
+        </div>
+        <div class="form-group" id="options-group">
+          <label class="form-label">选项（用换行分隔）</label>
+          <textarea class="form-textarea" id="q-options" rows="4" placeholder="选项A&#10;选项B&#10;选项C&#10;选项D"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">正确答案</label>
+          <input type="text" class="form-input" id="q-answer" required placeholder="如：A 或 ABC">
+        </div>
+        <div class="form-group">
+          <label class="form-label">解析</label>
+          <textarea class="form-textarea" id="q-explanation" rows="2" placeholder="请输入答案解析"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">添加</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    if (!AdminAuth.checkAuth()) {
+      location.href = 'login.html';
+    }
+
+    async function loadQuestions() {
+      try {
+        const questions = await AdminAPI.get('/admin/api/questions');
+        const tbody = document.getElementById('questions-table');
+        
+        if (questions.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无题目</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = questions.map(q => `
+          <tr>
+            <td>${q.id}</td>
+            <td>${AdminUtils.getGradeLabel(q.category)}</td>
+            <td>${AdminUtils.getQuestionTypeLabel(q.type)}</td>
+            <td>${q.question}</td>
+            <td>${q.answer}</td>
+            <td>
+              <button class="btn btn-danger btn-sm" onclick="deleteQuestion(${q.id})">删除</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('加载题目失败:', err);
+      }
+    }
+
+    function updateOptionInputs() {
+      const type = document.getElementById('q-type').value;
+      const group = document.getElementById('options-group');
+      if (type === 'judge') {
+        group.classList.add('hidden');
+      } else {
+        group.classList.remove('hidden');
+      }
+    }
+
+    function showAddModal() {
+      document.getElementById('add-modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('add-modal').classList.add('hidden');
+      document.getElementById('add-form').reset();
+    }
+
+    async function addQuestion(event) {
+      event.preventDefault();
+      
+      const category = document.getElementById('q-category').value;
+      const type = document.getElementById('q-type').value;
+      const question = document.getElementById('q-question').value.trim();
+      const optionsText = document.getElementById('q-options').value.trim();
+      const answer = document.getElementById('q-answer').value.trim().toUpperCase();
+      const explanation = document.getElementById('q-explanation').value.trim();
+
+      let options = [];
+      if (type === 'judge') {
+        options = ['正确', '错误'];
+      } else {
+        options = optionsText.split('\n').filter(o => o.trim());
+      }
+
+      try {
+        await AdminAPI.post('/admin/api/questions', {
+          category,
+          type,
+          question,
+          options,
+          answer,
+          explanation
+        });
+        
+        AdminUtils.showToast('添加成功');
+        closeModal();
+        loadQuestions();
+      } catch (err) {
+        AdminUtils.showToast('添加失败', 'error');
+      }
+
+      return false;
+    }
+
+    async function deleteQuestion(id) {
+      if (!confirm('确定要删除这道题吗？')) return;
+      
+      try {
+        await AdminAPI.delete(`/admin/api/questions/${id}`);
+        AdminUtils.showToast('删除成功');
+        loadQuestions();
+      } catch (err) {
+        AdminUtils.showToast('删除失败', 'error');
+      }
+    }
+
+    loadQuestions();
+  </script>
+</body>
+</html>
