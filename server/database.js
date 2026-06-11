@@ -64,11 +64,12 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         openid TEXT UNIQUE,
+        phone TEXT UNIQUE,
+        password TEXT,
         name TEXT,
         school TEXT,
         grade TEXT,
         class TEXT,
-        phone TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -97,7 +98,9 @@ async function initDatabase() {
         total INTEGER NOT NULL,
         prize TEXT,
         prize_status TEXT DEFAULT 'pending',
+        redeem_code TEXT,
         user_info TEXT,
+        claimed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -188,6 +191,11 @@ async function initDatabase() {
     if (taskCount.count === 0) {
       await initCheckinTasks();
     }
+
+    // 兼容旧数据库：添加缺失的列
+    try { await dbAsync.run('ALTER TABLE users ADD COLUMN password TEXT'); } catch(e) {}
+    try { await dbAsync.run('ALTER TABLE quiz_records ADD COLUMN redeem_code TEXT'); } catch(e) {}
+    try { await dbAsync.run('ALTER TABLE quiz_records ADD COLUMN claimed_at DATETIME'); } catch(e) {}
 
     // 初始化示例题目
     const questionCount = await dbAsync.get('SELECT COUNT(*) as count FROM questions');

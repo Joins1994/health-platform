@@ -27,58 +27,82 @@ const AdminAuth = {
 // API请求
 const AdminAPI = {
   async get(url) {
-    const res = await fetch(`${API_BASE}${url}`, {
-      headers: { 'Authorization': `Bearer ${AdminAuth.getToken()}` }
-    });
-    if (res.status === 401) {
-      AdminAuth.logout();
-      return;
+    try {
+      const res = await fetch(`${API_BASE}${url}`, {
+        headers: { 'Authorization': `Bearer ${AdminAuth.getToken()}` }
+      });
+      if (res.status === 401) { AdminAuth.logout(); return null; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || '请求失败');
+      }
+      return res.json();
+    } catch (err) {
+      if (err.message === '请求失败') throw err;
+      throw new Error('网络错误');
     }
-    return res.json();
   },
 
   async post(url, data) {
-    const res = await fetch(`${API_BASE}${url}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AdminAuth.getToken()}`
-      },
-      body: JSON.stringify(data)
-    });
-    if (res.status === 401) {
-      AdminAuth.logout();
-      return;
+    try {
+      const res = await fetch(`${API_BASE}${url}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AdminAuth.getToken()}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (res.status === 401) { AdminAuth.logout(); return null; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || '请求失败');
+      }
+      return res.json();
+    } catch (err) {
+      if (err.message === '请求失败') throw err;
+      throw new Error('网络错误');
     }
-    return res.json();
   },
 
   async put(url, data) {
-    const res = await fetch(`${API_BASE}${url}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AdminAuth.getToken()}`
-      },
-      body: JSON.stringify(data)
-    });
-    if (res.status === 401) {
-      AdminAuth.logout();
-      return;
+    try {
+      const res = await fetch(`${API_BASE}${url}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AdminAuth.getToken()}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (res.status === 401) { AdminAuth.logout(); return null; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || '请求失败');
+      }
+      return res.json();
+    } catch (err) {
+      if (err.message === '请求失败') throw err;
+      throw new Error('网络错误');
     }
-    return res.json();
   },
 
   async delete(url) {
-    const res = await fetch(`${API_BASE}${url}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${AdminAuth.getToken()}` }
-    });
-    if (res.status === 401) {
-      AdminAuth.logout();
-      return;
+    try {
+      const res = await fetch(`${API_BASE}${url}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${AdminAuth.getToken()}` }
+      });
+      if (res.status === 401) { AdminAuth.logout(); return null; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || '请求失败');
+      }
+      return res.json();
+    } catch (err) {
+      if (err.message === '请求失败') throw err;
+      throw new Error('网络错误');
     }
-    return res.json();
   }
 };
 
@@ -115,6 +139,41 @@ const AdminUtils = {
       'judge': '判断题'
     };
     return map[type] || type;
+  },
+
+  // 渲染分页控件
+  renderPagination(containerId, total, page, limit, loadFn) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const totalPages = Math.ceil(total / limit);
+    if (totalPages <= 1) { container.innerHTML = ''; return; }
+    
+    let pages = [];
+    const start = Math.max(1, page - 2);
+    const end = Math.min(totalPages, page + 2);
+    for (let i = start; i <= end; i++) pages.push(i);
+    
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;">
+        <span class="text-sm text-muted">共 ${total} 条</span>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-outline btn-sm" ${page <= 1 ? 'disabled' : ''} onclick="${loadFn}(${page - 1})">上一页</button>
+          ${pages.map(p => `<button class="btn btn-sm ${p === page ? 'btn-primary' : 'btn-outline'}" onclick="${loadFn}(${p})">${p}</button>`).join('')}
+          <button class="btn btn-outline btn-sm" ${page >= totalPages ? 'disabled' : ''} onclick="${loadFn}(${page + 1})">下一页</button>
+        </div>
+      </div>
+    `;
+  },
+
+  // 导出CSV
+  exportCSV(filename, headers, rows) {
+    const BOM = '\uFEFF';
+    const csv = BOM + [headers.join(','), ...rows.map(r => r.map(c => `"${(c || '').toString().replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}.csv`;
+    link.click();
   }
 };
 
@@ -143,6 +202,9 @@ document.addEventListener('DOMContentLoaded', () => {
         </a></li>
         <li><a href="records.html" class="${location.pathname.includes('records') ? 'active' : ''}">
           📋 <span>答题记录</span>
+        </a></li>
+        <li><a href="claims.html" class="${location.pathname.includes('claims') ? 'active' : ''}">
+          🎫 <span>领奖核销</span>
         </a></li>
         <li><a href="checkin-records.html" class="${location.pathname.includes('checkin') ? 'active' : ''}">
           📅 <span>打卡记录</span>

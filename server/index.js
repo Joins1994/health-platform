@@ -4,15 +4,25 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const { dbAsync, initDatabase } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = 'health-platform-secret-key-2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'health-platform-secret-key-2024';
 
 // 中间件
 app.use(cors());
+
+// 登录速率限制（每IP每分钟5次）
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: '登录请求过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -33,13 +43,23 @@ const storage = multer.diskStorage({
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${uuidv4()}${path.extname(file.originalname)}`;
+    const ext = path.extname(file.originalname).toLowerCase();
+    const uniqueName = `${Date.now()}-${uuidv4()}${ext}`;
     cb(null, uniqueName);
   }
 });
 const upload = multer({ 
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 } // 100MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('仅支持上传图片（jpg/png/gif/webp）'));
+    }
+  }
 });
 
 // ===== 认证中间件 =====
@@ -57,20 +77,140 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ===== 模拟微信登录（实际部署时接入微信OAuth） =====
-app.post('/api/login', async (req, res) => {
-  const { code } = req.body;
-  const openid = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+// 用户认证中间件（从JWT获取openid，防止身份伪造）
+function userAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: '请先登录' });
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userOpenid = decoded.openid;
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: '登录已过期，请重新登录' });
+  }
+}
+
+// ===== 用户注册/登录模块 =====
+
+// 注册（手机号+密码+个人信息）
+app.post('/api/register', async (req, res) => {
+  const { phone, password, name, school, grade, class: className } = req.body;
+  
+  if (!phone || !password || !name || !school || !grade || !className) {
+    return res.status(400).json({ error: '请填写完整信息' });
+  }
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    return res.status(400).json({ error: '请输入正确的手机号' });
+  }
   
   try {
-    let user = await dbAsync.get('SELECT * FROM users WHERE openid = ?', [openid]);
-    if (!user) {
-      await dbAsync.run('INSERT INTO users (openid) VALUES (?)', [openid]);
-      user = await dbAsync.get('SELECT * FROM users WHERE openid = ?', [openid]);
+    const existing = await dbAsync.get('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (existing) {
+      return res.status(400).json({ error: '该手机号已注册' });
     }
-    res.json({ openid, user });
+    
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    const openid = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    await dbAsync.run(
+      'INSERT INTO users (openid, phone, password, name, school, grade, class) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [openid, phone, hashedPassword, name, school, grade, className]
+    );
+    
+    const user = await dbAsync.get('SELECT id, openid, phone, name, school, grade, class FROM users WHERE phone = ?', [phone]);
+    const token = jwt.sign({ userId: user.id, openid: user.openid, phone }, JWT_SECRET, { expiresIn: '30d' });
+    
+    res.json({ token, user });
   } catch (err) {
+    console.error('注册错误:', err);
+    res.status(500).json({ error: '注册失败' });
+  }
+});
+
+// 登录（手机号+密码）
+app.post('/api/login', loginLimiter, async (req, res) => {
+  const { phone, password } = req.body;
+  
+  if (!phone || !password) {
+    return res.status(400).json({ error: '请输入手机号和密码' });
+  }
+  
+  try {
+    const user = await dbAsync.get('SELECT * FROM users WHERE phone = ?', [phone]);
+    if (!user || !user.password) {
+      return res.status(401).json({ error: '手机号或密码错误' });
+    }
+    
+    if (!bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: '手机号或密码错误' });
+    }
+    
+    const token = jwt.sign({ userId: user.id, openid: user.openid, phone }, JWT_SECRET, { expiresIn: '30d' });
+    
+    res.json({
+      token,
+      user: { id: user.id, openid: user.openid, phone: user.phone, name: user.name, school: user.school, grade: user.grade, class: user.class }
+    });
+  } catch (err) {
+    console.error('登录错误:', err);
     res.status(500).json({ error: '登录失败' });
+  }
+});
+
+// 获取当前用户信息（需登录）
+app.get('/api/user/profile', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '未登录' });
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await dbAsync.get('SELECT id, openid, phone, name, school, grade, class FROM users WHERE id = ?', [decoded.userId]);
+    res.json(user || {});
+  } catch (err) {
+    res.status(401).json({ error: '登录已过期，请重新登录' });
+  }
+});
+
+// 修改个人信息
+app.post('/api/user/update-profile', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '未登录' });
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { name, school, grade, class: className } = req.body;
+    await dbAsync.run(
+      'UPDATE users SET name = ?, school = ?, grade = ?, class = ? WHERE id = ?',
+      [name, school, grade, className, decoded.userId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: '修改失败' });
+  }
+});
+
+// 修改密码
+app.post('/api/user/change-password', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '未登录' });
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { oldPassword, newPassword } = req.body;
+    
+    const user = await dbAsync.get('SELECT password FROM users WHERE id = ?', [decoded.userId]);
+    if (!user || !bcrypt.compareSync(oldPassword, user.password)) {
+      return res.status(400).json({ error: '当前密码错误' });
+    }
+    
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+    await dbAsync.run('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, decoded.userId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: '修改失败' });
   }
 });
 
@@ -98,11 +238,15 @@ app.get('/api/quiz/questions/:category', async (req, res) => {
 });
 
 // 提交答案
-app.post('/api/quiz/submit', async (req, res) => {
-  const { openid, category, answers } = req.body;
+app.post('/api/quiz/submit', userAuth, async (req, res) => {
+  const openid = req.userOpenid;
+  const { category, answers } = req.body;
   
-  let correct = 0;
+  if (!answers || answers.length === 0) {
+    return res.status(400).json({ error: '请提交答案' });
+  }
   const results = [];
+  let correct = 0;
   
   try {
     for (const ans of answers) {
@@ -131,11 +275,17 @@ app.post('/api/quiz/submit', async (req, res) => {
   }
 });
 
-// 抽奖
-app.post('/api/quiz/lottery', async (req, res) => {
-  const { openid } = req.body;
+// 抽奖（需答题全对才能参与）
+app.post('/api/quiz/lottery', userAuth, async (req, res) => {
+  const openid = req.userOpenid;
   
   try {
+    // 校验是否有答题全对记录
+    const passedRecord = await dbAsync.get('SELECT id FROM quiz_records WHERE openid = ? AND score = total AND prize IS NULL ORDER BY id DESC LIMIT 1', [openid]);
+    if (!passedRecord) {
+      return res.status(400).json({ error: '需要答题全对才能抽奖', prize: null, redeem_code: null });
+    }
+    
     const prizes = await dbAsync.all('SELECT * FROM prizes WHERE remaining > 0');
     
     if (prizes.length === 0) {
@@ -154,27 +304,33 @@ app.post('/api/quiz/lottery', async (req, res) => {
       }
     }
     
+    let redeemCode = null;
+    
     if (selectedPrize) {
       await dbAsync.run('UPDATE prizes SET remaining = remaining - 1 WHERE id = ?', [selectedPrize.id]);
+      // 生成兑换码：HP + 年月日 + 4位随机数
+      redeemCode = 'HP' + new Date().toISOString().slice(0,10).replace(/-/g,'') + Math.random().toString(36).substr(2,4).toUpperCase();
       // SQLite不支持UPDATE ORDER BY LIMIT，用子查询实现
       await dbAsync.run(
-        'UPDATE quiz_records SET prize = ? WHERE rowid = (SELECT rowid FROM quiz_records WHERE openid = ? AND prize IS NULL ORDER BY id DESC LIMIT 1)',
-        [selectedPrize.name, openid]
+        'UPDATE quiz_records SET prize = ?, prize_status = \'pending\', redeem_code = ? WHERE rowid = (SELECT rowid FROM quiz_records WHERE openid = ? AND prize IS NULL ORDER BY id DESC LIMIT 1)',
+        [selectedPrize.name, redeemCode, openid]
       );
     }
     
     res.json({ 
-      prize: selectedPrize ? { name: selectedPrize.name, description: selectedPrize.description } : null 
+      prize: selectedPrize ? { name: selectedPrize.name, description: selectedPrize.description } : null,
+      redeem_code: redeemCode
     });
   } catch (err) {
     console.error('抽奖错误:', err);
-    res.status(500).json({ error: '抽奖失败: ' + err.message });
+    res.status(500).json({ error: '抽奖失败' });
   }
 });
 
 // 身份登记
-app.post('/api/quiz/register', async (req, res) => {
-  const { openid, name, school, grade, class: className, phone } = req.body;
+app.post('/api/quiz/register', userAuth, async (req, res) => {
+  const openid = req.userOpenid;
+  const { name, school, grade, class: className, phone } = req.body;
   
   try {
     await dbAsync.run('UPDATE users SET name = ?, school = ?, grade = ?, class = ?, phone = ? WHERE openid = ?', [name, school, grade, className, phone || null, openid]);
@@ -236,8 +392,9 @@ app.get('/api/works', async (req, res) => {
 });
 
 // 提交作品
-app.post('/api/works', upload.array('images', 6), async (req, res) => {
-  const { openid, title, description } = req.body;
+app.post('/api/works', userAuth, upload.array('images', 6), async (req, res) => {
+  const openid = req.userOpenid;
+  const { title, description } = req.body;
   const images = req.files ? req.files.map(f => `/uploads/${f.filename}`) : [];
   
   try {
@@ -249,9 +406,9 @@ app.post('/api/works', upload.array('images', 6), async (req, res) => {
 });
 
 // 投票
-app.post('/api/works/:id/vote', async (req, res) => {
+app.post('/api/works/:id/vote', userAuth, async (req, res) => {
   const { id } = req.params;
-  const { openid } = req.body;
+  const openid = req.userOpenid;
   const today = new Date().toISOString().split('T')[0];
   
   try {
@@ -315,27 +472,36 @@ app.get('/api/checkin/tasks', async (req, res) => {
 });
 
 // 打卡
-app.post('/api/checkin', upload.single('proof'), async (req, res) => {
-  const { openid, dayNumber, taskId } = req.body;
+app.post('/api/checkin', userAuth, upload.single('proof'), async (req, res) => {
+  const openid = req.userOpenid;
+  const { dayNumber, taskId } = req.body;
   const proof = req.file ? `/uploads/${req.file.filename}` : req.body.proof || '';
   
   try {
-    const existing = await dbAsync.get('SELECT id FROM checkin_records WHERE openid = ? AND day_number = ? AND task_id = ?', [openid, dayNumber, taskId]);
+    const day = parseInt(dayNumber);
+    const task = parseInt(taskId);
+    
+    if (!openid || isNaN(day) || isNaN(task)) {
+      return res.status(400).json({ error: '参数不完整' });
+    }
+    
+    const existing = await dbAsync.get('SELECT id FROM checkin_records WHERE openid = ? AND day_number = ? AND task_id = ?', [openid, day, task]);
     if (existing) {
       return res.status(400).json({ error: '今天已经打卡了' });
     }
     
-    await dbAsync.run('INSERT INTO checkin_records (openid, day_number, task_id, proof) VALUES (?, ?, ?, ?)', [openid, dayNumber, taskId, proof]);
+    await dbAsync.run('INSERT INTO checkin_records (openid, day_number, task_id, proof) VALUES (?, ?, ?, ?)', [openid, day, task, proof]);
     
     res.json({ success: true });
   } catch (err) {
+    console.error('打卡错误:', err);
     res.status(500).json({ error: '打卡失败' });
   }
 });
 
 // 获取打卡进度
-app.get('/api/checkin/progress', async (req, res) => {
-  const { openid } = req.query;
+app.get('/api/checkin/progress', userAuth, async (req, res) => {
+  const openid = req.userOpenid;
   
   try {
     const records = await dbAsync.all('SELECT * FROM checkin_records WHERE openid = ? ORDER BY day_number', [openid]);
@@ -356,7 +522,7 @@ app.get('/api/checkin/progress', async (req, res) => {
 // ===== 管理后台API =====
 
 // 管理员登录
-app.post('/admin/api/login', async (req, res) => {
+app.post('/admin/api/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   
   try {
@@ -381,6 +547,7 @@ app.get('/api/stats', async (req, res) => {
     const totalCheckin = await dbAsync.get('SELECT COUNT(*) as count FROM checkin_records');
     const pendingWorks = await dbAsync.get('SELECT COUNT(*) as count FROM works WHERE status = ?', ['pending']);
     const totalPrizes = await dbAsync.get('SELECT SUM(remaining) as total FROM prizes');
+    const pendingClaims = await dbAsync.get('SELECT COUNT(*) as count FROM quiz_records WHERE prize IS NOT NULL AND prize != \'\' AND prize_status = \'pending\'');
     
     res.json({
       totalUsers: totalUsers.count,
@@ -388,7 +555,8 @@ app.get('/api/stats', async (req, res) => {
       totalWorks: totalWorks.count,
       totalCheckin: totalCheckin.count,
       pendingWorks: pendingWorks.count,
-      totalPrizes: totalPrizes.total || 0
+      totalPrizes: totalPrizes.total || 0,
+      pendingClaims: pendingClaims.count
     });
   } catch (err) {
     res.status(500).json({ error: '获取统计失败' });
@@ -422,6 +590,24 @@ app.delete('/admin/api/questions/:id', authMiddleware, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: '删除题目失败' });
+  }
+});
+
+// 编辑题目
+app.put('/admin/api/questions/:id', authMiddleware, async (req, res) => {
+  const { category, type, question, options, answer, explanation } = req.body;
+  if (!category || !type || !question || !answer) {
+    return res.status(400).json({ error: '请填写完整信息' });
+  }
+  try {
+    await dbAsync.run(
+      'UPDATE questions SET category = ?, type = ?, question = ?, options = ?, answer = ?, explanation = ? WHERE id = ?',
+      [category, type, question, JSON.stringify(options || []), answer, explanation || '', req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('编辑题目失败:', err);
+    res.status(500).json({ error: '编辑题目失败' });
   }
 });
 
@@ -478,6 +664,7 @@ app.put('/admin/api/prizes/:id', authMiddleware, async (req, res) => {
   const { name, description, quantity, probability } = req.body;
   try {
     const prize = await dbAsync.get('SELECT remaining, quantity FROM prizes WHERE id = ?', [req.params.id]);
+    if (!prize) return res.status(404).json({ error: '奖品不存在' });
     const diff = quantity - prize.quantity;
     
     await dbAsync.run('UPDATE prizes SET name = ?, description = ?, quantity = ?, remaining = remaining + ?, probability = ? WHERE id = ?', [name, description, quantity, diff, probability, req.params.id]);
@@ -496,44 +683,137 @@ app.delete('/admin/api/prizes/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// 用户管理
+// 用户管理（支持分页、搜索）
 app.get('/admin/api/users', authMiddleware, async (req, res) => {
   try {
-    const users = await dbAsync.all('SELECT * FROM users ORDER BY created_at DESC');
-    res.json(users);
+    const { page = 1, limit = 20, keyword = '' } = req.query;
+    const offset = (page - 1) * limit;
+    
+    let where = '';
+    let params = [];
+    if (keyword) {
+      where = 'WHERE u.name LIKE ? OR u.school LIKE ? OR u.phone LIKE ?';
+      params = [`%${keyword}%`, `%${keyword}%`, `%${keyword}%`];
+    }
+    
+    const users = await dbAsync.all(`
+      SELECT u.id, u.openid, u.phone, u.name, u.school, u.grade, u.class, u.created_at,
+        (SELECT COUNT(*) FROM quiz_records WHERE openid = u.openid) as quiz_count,
+        (SELECT COUNT(DISTINCT day_number) FROM checkin_records WHERE openid = u.openid) as checkin_days
+      FROM users u ${where}
+      ORDER BY u.created_at DESC LIMIT ? OFFSET ?
+    `, [...params, parseInt(limit), parseInt(offset)]);
+    
+    const total = await dbAsync.get(`SELECT COUNT(*) as count FROM users u ${where}`, params);
+    
+    res.json({ data: users, total: total.count, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
+    console.error('获取用户失败:', err);
     res.status(500).json({ error: '获取用户失败' });
   }
 });
 
-// 答题记录
+// 答题记录（支持分页）
 app.get('/admin/api/quiz-records', authMiddleware, async (req, res) => {
   try {
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+    
     const records = await dbAsync.all(`
-      SELECT qr.*, u.name, u.school, u.grade, u.class 
+      SELECT qr.*, u.name, u.school, u.grade, u.class, u.phone
       FROM quiz_records qr 
       LEFT JOIN users u ON qr.openid = u.openid 
-      ORDER BY qr.created_at DESC
-    `);
-    res.json(records);
+      ORDER BY qr.created_at DESC LIMIT ? OFFSET ?
+    `, [parseInt(limit), parseInt(offset)]);
+    
+    const total = await dbAsync.get('SELECT COUNT(*) as count FROM quiz_records');
+    res.json({ data: records, total: total.count, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
+    console.error('获取记录失败:', err);
     res.status(500).json({ error: '获取记录失败' });
   }
 });
 
-// 打卡记录
+// 打卡记录（支持分页）
 app.get('/admin/api/checkin-records', authMiddleware, async (req, res) => {
   try {
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+    
     const records = await dbAsync.all(`
-      SELECT cr.*, u.name, u.school, ct.title as task_title 
+      SELECT cr.*, u.name, u.school, u.grade, u.class, u.phone
       FROM checkin_records cr 
       LEFT JOIN users u ON cr.openid = u.openid 
       LEFT JOIN checkin_tasks ct ON cr.task_id = ct.id
-      ORDER BY cr.created_at DESC
-    `);
+      ORDER BY cr.created_at DESC LIMIT ? OFFSET ?
+    `, [parseInt(limit), parseInt(offset)]);
+    
+    const total = await dbAsync.get('SELECT COUNT(*) as count FROM checkin_records');
+    res.json({ data: records, total: total.count, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    console.error('获取打卡记录失败:', err);
+    res.status(500).json({ error: '获取打卡记录失败' });
+  }
+});
+
+// ===== 领奖核销模块 =====
+
+// 获取待核销列表（管理后台，支持分页）
+app.get('/admin/api/claims', authMiddleware, async (req, res) => {
+  const status = req.query.status || 'pending';
+  const { page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+  try {
+    const records = await dbAsync.all(`
+      SELECT qr.*, u.name, u.school, u.grade, u.class, u.phone
+      FROM quiz_records qr 
+      LEFT JOIN users u ON qr.openid = u.openid 
+      WHERE qr.prize IS NOT NULL AND qr.prize != '' AND qr.prize_status = ?
+      ORDER BY qr.created_at DESC LIMIT ? OFFSET ?
+    `, [status, parseInt(limit), parseInt(offset)]);
+    
+    const total = await dbAsync.get('SELECT COUNT(*) as count FROM quiz_records WHERE prize IS NOT NULL AND prize != \'\' AND prize_status = ?', [status]);
+    res.json({ data: records, total: total.count, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    console.error('获取核销记录失败:', err);
+    res.status(500).json({ error: '获取核销记录失败' });
+  }
+});
+
+// 执行核销（管理后台）
+app.put('/admin/api/claims/:id', authMiddleware, async (req, res) => {
+  const { action } = req.body; // 'claim' 核销 | 'reject' 拒绝
+  try {
+    if (action === 'claim') {
+      await dbAsync.run(
+        'UPDATE quiz_records SET prize_status = \'claimed\', claimed_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [req.params.id]
+      );
+    } else if (action === 'reject') {
+      await dbAsync.run(
+        'UPDATE quiz_records SET prize_status = \'rejected\' WHERE id = ?',
+        [req.params.id]
+      );
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: '核销操作失败' });
+  }
+});
+
+// 用户查看自己的奖品
+app.get('/api/my-prizes', userAuth, async (req, res) => {
+  const openid = req.userOpenid;
+  try {
+    const records = await dbAsync.all(`
+      SELECT id, prize, prize_status, redeem_code, claimed_at, created_at
+      FROM quiz_records 
+      WHERE openid = ? AND prize IS NOT NULL AND prize != ''
+      ORDER BY created_at DESC
+    `, [openid]);
     res.json(records);
   } catch (err) {
-    res.status(500).json({ error: '获取打卡记录失败' });
+    res.status(500).json({ error: '获取奖品失败' });
   }
 });
 

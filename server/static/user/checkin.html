@@ -100,7 +100,7 @@
     async function loadProgress() {
       try {
         const openid = Auth.getOpenid();
-        progress = await API.get(`/api/checkin/progress?openid=${openid}`);
+        progress = await API.get('/api/checkin/progress');
         
         completedDays = new Set(progress.records.map(r => r.day_number));
         
@@ -225,8 +225,7 @@
           }
         }
       } catch (err) {
-        const data = await err.json?.() || {};
-        Utils.showToast(data.error || '打卡失败', 'error');
+        Utils.showToast(err.message || '打卡失败', 'error');
       }
     }
 

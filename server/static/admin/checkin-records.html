@@ -13,6 +13,7 @@
     <div class="main-content">
       <div class="page-header">
         <h2>📅 打卡记录</h2>
+        <button class="btn btn-outline btn-sm" onclick="exportCheckin()">📥 导出CSV</button>
       </div>
 
       <div class="card">
@@ -23,6 +24,7 @@
                 <th>ID</th>
                 <th>用户</th>
                 <th>学校</th>
+                <th>班级</th>
                 <th>第几天</th>
                 <th>任务</th>
                 <th>备注</th>
@@ -32,40 +34,47 @@
             <tbody id="checkin-table"></tbody>
           </table>
         </div>
+        <div id="pagination"></div>
       </div>
     </div>
   </div>
 
   <script src="js/admin.js"></script>
   <script>
-    if (!AdminAuth.checkAuth()) {
-      location.href = 'login.html';
-    }
+    if (!AdminAuth.checkAuth()) location.href = 'login.html';
 
-    async function loadCheckinRecords() {
+    async function loadCheckinRecords(page = 1) {
       try {
-        const records = await AdminAPI.get('/admin/api/checkin-records');
+        const result = await AdminAPI.get(`/admin/api/checkin-records?page=${page}&limit=20`);
+        const { data: records, total, limit } = result;
         const tbody = document.getElementById('checkin-table');
         
         if (records.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无记录</td></tr>';
-          return;
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无记录</td></tr>';
+        } else {
+          tbody.innerHTML = records.map(r => `
+            <tr>
+              <td>${r.id}</td>
+              <td>${r.name || '匿名'}</td>
+              <td>${r.school || '-'}</td>
+              <td>${r.grade || ''} ${r.class || ''}</td>
+              <td>第${r.day_number}天</td>
+              <td>${r.task_title || '-'}</td>
+              <td>${r.proof && r.proof.startsWith('/uploads') ? `<a href="${r.proof}" target="_blank"><img src="${r.proof}" style="height:40px;border-radius:4px;"></a>` : (r.proof || '-')}</td>
+              <td>${AdminUtils.formatDate(r.created_at)}</td>
+            </tr>
+          `).join('');
         }
+        AdminUtils.renderPagination('pagination', total, page, limit, 'loadCheckinRecords');
+      } catch (err) { console.error(err); }
+    }
 
-        tbody.innerHTML = records.map(r => `
-          <tr>
-            <td>${r.id}</td>
-            <td>${r.name || '匿名'}</td>
-            <td>${r.school || '-'}</td>
-            <td>第${r.day_number}天</td>
-            <td>${r.task_title || '-'}</td>
-            <td class="text-sm">${r.proof || '-'}</td>
-            <td>${AdminUtils.formatDate(r.created_at)}</td>
-          </tr>
-        `).join('');
-      } catch (err) {
-        console.error('加载打卡记录失败:', err);
-      }
+    async function exportCheckin() {
+      try {
+        const result = await AdminAPI.get('/admin/api/checkin-records?page=1&limit=9999');
+        AdminUtils.exportCSV('打卡记录', ['ID','姓名','学校','班级','第几天','任务','打卡时间'],
+          result.data.map(r => [r.id, r.name, r.school, `${r.grade||''} ${r.class||''}`, r.day_number, r.task_title, r.created_at]));
+      } catch (err) { AdminUtils.showToast('导出失败', 'error'); }
     }
 
     loadCheckinRecords();

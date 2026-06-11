@@ -60,6 +60,13 @@
             <p>剩余奖品</p>
           </div>
         </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#fff3e0;color:#ff9800;">🎫</div>
+          <div class="stat-info">
+            <h3 id="stat-claims">0</h3>
+            <p>待核销</p>
+          </div>
+        </div>
       </div>
 
       <!-- 快捷入口 -->
@@ -68,6 +75,7 @@
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <a href="questions.html" class="btn btn-primary">📝 题库管理</a>
           <a href="works-review.html" class="btn btn-accent">🎨 作品审核</a>
+          <a href="claims.html" class="btn btn-outline" style="color:#ff9800;border-color:#ff9800;">🎫 领奖核销</a>
           <a href="prizes.html" class="btn btn-outline">🎁 奖品管理</a>
           <a href="users.html" class="btn btn-outline">👥 用户管理</a>
         </div>
@@ -90,6 +98,7 @@
         document.getElementById('stat-checkin').textContent = stats.totalCheckin || 0;
         document.getElementById('stat-pending').textContent = stats.pendingWorks || 0;
         document.getElementById('stat-prizes').textContent = stats.totalPrizes || 0;
+        document.getElementById('stat-claims').textContent = stats.pendingClaims || 0;
       } catch (err) {
         console.error('加载统计失败:', err);
       }

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>个人中心 - 健康成长互动平台</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="page-content">
+    <div class="header">
+      <h1>👤 个人中心</h1>
+    </div>
+
+    <div class="container">
+      <!-- 用户信息卡片 -->
+      <div class="card">
+        <div class="card-title">📝 基本信息</div>
+        <div class="form-group">
+          <label class="form-label">手机号</label>
+          <input type="tel" class="form-input" id="profile-phone" disabled style="background:#f5f5f5;">
+          <span class="text-sm text-muted">手机号不可修改</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">姓名</label>
+          <input type="text" class="form-input" id="profile-name" placeholder="请输入姓名">
+        </div>
+        <div class="form-group">
+          <label class="form-label">学校</label>
+          <input type="text" class="form-input" id="profile-school" placeholder="请输入学校名称">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">年级</label>
+            <input type="text" class="form-input" id="profile-grade" placeholder="如：五年级">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">班级</label>
+            <input type="text" class="form-input" id="profile-class" placeholder="如：3班">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="saveProfile()">保存修改</button>
+      </div>
+
+      <!-- 修改密码 -->
+      <div class="card">
+        <div class="card-title">🔒 修改密码</div>
+        <div class="form-group">
+          <label class="form-label">当前密码</label>
+          <input type="password" class="form-input" id="old-password" placeholder="请输入当前密码">
+        </div>
+        <div class="form-group">
+          <label class="form-label">新密码</label>
+          <input type="password" class="form-input" id="new-password" placeholder="请输入新密码（至少6位）">
+        </div>
+        <div class="form-group">
+          <label class="form-label">确认新密码</label>
+          <input type="password" class="form-input" id="confirm-password" placeholder="再次输入新密码">
+        </div>
+        <button class="btn btn-outline btn-block" onclick="changePassword()">修改密码</button>
+      </div>
+
+      <!-- 退出登录 -->
+      <div class="card">
+        <button class="btn btn-block" style="background:#f5f5f5;color:#e74c3c;border:1px solid #e74c3c;" onclick="Auth.logout()">退出登录</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="nav-bottom"></div>
+
+  <script src="js/app.js"></script>
+  <script>
+    if (!Auth.requireAuth()) { /* will redirect */ }
+
+    async function loadProfile() {
+      try {
+        const user = await API.get('/api/user/profile');
+        document.getElementById('profile-phone').value = user.phone || '';
+        document.getElementById('profile-name').value = user.name || '';
+        document.getElementById('profile-school').value = user.school || '';
+        document.getElementById('profile-grade').value = user.grade || '';
+        document.getElementById('profile-class').value = user.class || '';
+      } catch (e) {
+        Utils.showToast('加载失败', 'error');
+      }
+    }
+
+    async function saveProfile() {
+      const name = document.getElementById('profile-name').value.trim();
+      const school = document.getElementById('profile-school').value.trim();
+      const grade = document.getElementById('profile-grade').value.trim();
+      const cls = document.getElementById('profile-class').value.trim();
+
+      if (!name || !school || !grade || !cls) {
+        Utils.showToast('请填写完整信息', 'error');
+        return;
+      }
+
+      try {
+        await API.post('/api/user/update-profile', { name, school, grade, class: cls });
+        // 更新本地缓存
+        const user = Auth.getUser();
+        user.name = name;
+        user.school = school;
+        user.grade = grade;
+        user.class = cls;
+        Auth.saveLogin(Auth.getToken(), user);
+        Utils.showToast('保存成功！');
+      } catch (e) {
+        Utils.showToast(e.message || '保存失败', 'error');
+      }
+    }
+
+    async function changePassword() {
+      const oldPwd = document.getElementById('old-password').value;
+      const newPwd = document.getElementById('new-password').value;
+      const confirmPwd = document.getElementById('confirm-password').value;
+
+      if (!oldPwd || !newPwd || !confirmPwd) {
+        Utils.showToast('请填写完整', 'error');
+        return;
+      }
+      if (newPwd.length < 6) {
+        Utils.showToast('新密码至少6位', 'error');
+        return;
+      }
+      if (newPwd !== confirmPwd) {
+        Utils.showToast('两次密码不一致', 'error');
+        return;
+      }
+
+      try {
+        await API.post('/api/user/change-password', { oldPassword: oldPwd, newPassword: newPwd });
+        document.getElementById('old-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('confirm-password').value = '';
+        Utils.showToast('密码修改成功！');
+      } catch (e) {
+        Utils.showToast(e.message || '修改失败', 'error');
+      }
+    }
+
+    loadProfile();
+  </script>
+</body>
+</html>

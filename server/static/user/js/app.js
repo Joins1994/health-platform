@@ -1,71 +1,105 @@
 // 全局配置
 const API_BASE = '';
 
-// 用户认证
+// 用户认证（手机号+密码登录）
 const Auth = {
-  getOpenid() {
-    let openid = localStorage.getItem('openid');
-    if (!openid) {
-      openid = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('openid', openid);
-    }
-    return openid;
+  getToken() {
+    return localStorage.getItem('user_token');
   },
 
-  async login() {
-    const openid = this.getOpenid();
-    try {
-      const res = await fetch(`${API_BASE}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: 'mock_code' })
-      });
-      const data = await res.json();
-      if (data.openid) {
-        localStorage.setItem('openid', data.openid);
-      }
-      return data;
-    } catch (err) {
-      console.error('登录失败:', err);
-      return { openid };
+  getUser() {
+    const data = localStorage.getItem('user_info');
+    return data ? JSON.parse(data) : null;
+  },
+
+  getOpenid() {
+    const user = this.getUser();
+    return user ? user.openid : null;
+  },
+
+  isLoggedIn() {
+    return !!this.getToken();
+  },
+
+  saveLogin(token, user) {
+    localStorage.setItem('user_token', token);
+    localStorage.setItem('user_info', JSON.stringify(user));
+  },
+
+  logout() {
+    localStorage.removeItem('user_token');
+    localStorage.removeItem('user_info');
+    location.href = '/static/user/login.html';
+  },
+
+  // 需要登录才能访问，未登录跳转登录页
+  requireAuth() {
+    if (!this.isLoggedIn()) {
+      location.href = '/static/user/login.html';
+      return false;
     }
+    return true;
   }
 };
 
 // API请求工具
 const API = {
   async get(url) {
-    const res = await fetch(`${API_BASE}${url}`);
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || '请求失败');
+    try {
+      const res = await fetch(`${API_BASE}${url}`, {
+        headers: Auth.getToken() ? { 'Authorization': `Bearer ${Auth.getToken()}` } : {}
+      });
+      if (res.status === 401) { Auth.logout(); throw new Error('请重新登录'); }
+      if (!res.ok) {
+        try { const err = await res.json(); throw new Error(err.error || '请求失败'); }
+        catch (e) { if (e.message === '请求失败') throw e; throw new Error('请求失败'); }
+      }
+      return res.json();
+    } catch (err) {
+      if (err.message === '请重新登录') throw err;
+      throw err;
     }
-    return res.json();
   },
 
   async post(url, data) {
-    const res = await fetch(`${API_BASE}${url}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || '请求失败');
+    try {
+      const res = await fetch(`${API_BASE}${url}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(Auth.getToken() ? { 'Authorization': `Bearer ${Auth.getToken()}` } : {})
+        },
+        body: JSON.stringify(data)
+      });
+      if (res.status === 401) { Auth.logout(); throw new Error('请重新登录'); }
+      if (!res.ok) {
+        try { const err = await res.json(); throw new Error(err.error || '请求失败'); }
+        catch (e) { if (e.message !== '请求失败') throw e; throw new Error('请求失败'); }
+      }
+      return res.json();
+    } catch (err) {
+      if (err.message === '请重新登录') throw err;
+      throw err;
     }
-    return res.json();
   },
 
   async postForm(url, formData) {
-    const res = await fetch(`${API_BASE}${url}`, {
-      method: 'POST',
-      body: formData
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || '请求失败');
+    try {
+      const res = await fetch(`${API_BASE}${url}`, {
+        method: 'POST',
+        headers: Auth.getToken() ? { 'Authorization': `Bearer ${Auth.getToken()}` } : {},
+        body: formData
+      });
+      if (res.status === 401) { Auth.logout(); throw new Error('请重新登录'); }
+      if (!res.ok) {
+        try { const err = await res.json(); throw new Error(err.error || '请求失败'); }
+        catch (e) { if (e.message !== '请求失败') throw e; throw new Error('请求失败'); }
+      }
+      return res.json();
+    } catch (err) {
+      if (err.message === '请重新登录') throw err;
+      throw err;
     }
-    return res.json();
   }
 };
 
@@ -98,7 +132,8 @@ const Utils = {
 
 // 页面初始化
 async function initApp() {
-  await Auth.login();
+  if (!Auth.requireAuth()) return;
+  // token存在性已检查，不再额外验证（API调用时会自动处理401）
 }
 
 // 底部导航
@@ -120,6 +155,10 @@ document.addEventListener('DOMContentLoaded', () => {
       <a href="checkin.html" class="nav-item ${location.pathname.includes('checkin') ? 'active' : ''}">
         <span class="icon">📅</span>
         <span>打卡</span>
+      </a>
+      <a href="profile.html" class="nav-item ${location.pathname.includes('profile') ? 'active' : ''}">
+        <span class="icon">👤</span>
+        <span>我的</span>
       </a>
     </nav>
   `;

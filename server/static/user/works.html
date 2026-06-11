@@ -126,8 +126,7 @@
         if (err.message) {
           Utils.showToast(err.message, 'error');
         } else {
-          const data = await err.json?.() || {};
-          Utils.showToast(data.error || '投票失败', 'error');
+          Utils.showToast(err.message || '投票失败', 'error');
         }
       }
     }

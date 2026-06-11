@@ -14,18 +14,24 @@
     </div>
 
     <div class="container">
-      <!-- 年级选择 -->
+      <!-- 年级选择（已登录用户自动匹配） -->
       <div id="grade-selection" class="fade-in">
         <div class="card">
           <div class="card-title">选择你的年级</div>
-          <div class="form-group">
-            <select class="form-select" id="grade-select">
-              <option value="">请选择年级</option>
-              <option value="primary_low">小学低年级（1-3年级）</option>
-              <option value="primary_high">小学高年级（4-6年级）</option>
-              <option value="middle">初中（7-9年级）</option>
-              <option value="high">高中（10-12年级）</option>
-            </select>
+          <div id="grade-auto-info" class="hidden">
+            <p class="text-muted mb-2">已根据你的注册信息自动匹配：</p>
+            <div class="badge badge-primary" style="font-size:1rem;padding:8px 16px;" id="grade-auto-label"></div>
+          </div>
+          <div id="grade-manual-select" class="hidden">
+            <div class="form-group">
+              <select class="form-select" id="grade-select">
+                <option value="">请选择年级</option>
+                <option value="primary_low">小学低年级（1-3年级）</option>
+                <option value="primary_high">小学高年级（4-6年级）</option>
+                <option value="middle">初中（7-9年级）</option>
+                <option value="high">高中（10-12年级）</option>
+              </select>
+            </div>
           </div>
           <button class="btn btn-primary btn-block" onclick="startQuiz()">开始答题</button>
         </div>
@@ -80,36 +86,21 @@
         <!-- 身份登记 -->
         <div id="register-area" class="hidden">
           <div class="card">
-            <div class="card-title">📝 身份登记</div>
-            <p class="text-sm text-muted mb-2">抽中奖品的同学请填写以下信息</p>
-            
-            <div class="form-group">
-              <label class="form-label">姓名</label>
-              <input type="text" class="form-input" id="reg-name" placeholder="请输入姓名">
-            </div>
-            <div class="form-group">
-              <label class="form-label">学校</label>
-              <input type="text" class="form-input" id="reg-school" placeholder="请输入学校名称">
-            </div>
-            <div class="form-group">
-              <label class="form-label">年级</label>
-              <input type="text" class="form-input" id="reg-grade" placeholder="如：五年级">
-            </div>
-            <div class="form-group">
-              <label class="form-label">班级</label>
-              <input type="text" class="form-input" id="reg-class" placeholder="如：3班">
-            </div>
-            <div class="form-group">
-              <label class="form-label">联系电话 <span class="text-muted text-sm">（选填，用于奖品发放通知）</span></label>
-              <input type="tel" class="form-input" id="reg-phone" placeholder="请输入家长手机号" maxlength="11">
-            </div>
-            <button class="btn btn-primary btn-block" onclick="submitRegister()">提交登记</button>
+            <div class="card-title">📝 确认领奖信息</div>
+            <div id="register-info"></div>
+            <button class="btn btn-primary btn-block" onclick="submitRegister()">确认提交</button>
           </div>
         </div>
 
         <div class="mt-2">
           <button class="btn btn-outline btn-block" onclick="location.reload()">再答一次</button>
         </div>
+      </div>
+
+      <!-- 我的奖品 -->
+      <div class="card mt-2">
+        <div class="card-title">🎁 我的奖品</div>
+        <div id="my-prizes-list"><p class="text-muted text-sm">加载中...</p></div>
       </div>
     </div>
   </div>
@@ -123,9 +114,41 @@
     let answers = [];
     let selectedOptions = [];
     let category = '';
+    const gradeLabelMap = {
+      'primary_low': '小学低年级（1-3年级）',
+      'primary_high': '小学高年级（4-6年级）',
+      'middle': '初中（7-9年级）',
+      'high': '高中（10-12年级）'
+    };
+
+    // 根据用户注册年级自动匹配题目分类
+    function autoDetectCategory() {
+      const user = Auth.getUser();
+      if (!user || !user.grade) return null;
+      const g = user.grade;
+      if (/^[一二三1-3]$/.test(g) || /一|二|三年级/.test(g)) return 'primary_low';
+      if (/^[四五六4-6]$/.test(g) || /四|五|六年级/.test(g)) return 'primary_high';
+      if (/^[七八九7-9]$/.test(g) || /七|八|九年级|初中/.test(g)) return 'middle';
+      if (/十|高一|高二|高三|高中/.test(g)) return 'high';
+      return null;
+    }
+
+    // 页面加载时自动匹配年级
+    (function() {
+      const autoCat = autoDetectCategory();
+      if (autoCat) {
+        category = autoCat;
+        document.getElementById('grade-auto-info').classList.remove('hidden');
+        document.getElementById('grade-auto-label').textContent = gradeLabelMap[autoCat];
+      } else {
+        document.getElementById('grade-manual-select').classList.remove('hidden');
+      }
+    })();
 
     async function startQuiz() {
-      category = document.getElementById('grade-select').value;
+      if (!category) {
+        category = document.getElementById('grade-select').value;
+      }
       if (!category) {
         Utils.showToast('请选择年级', 'error');
         return;
@@ -136,6 +159,10 @@
 
       try {
         questions = await API.get(`/api/quiz/questions/${category}?count=5`);
+        if (!questions || questions.length === 0) {
+          Utils.showToast('该分类暂无题目', 'error');
+          return;
+        }
         document.getElementById('total-q').textContent = questions.length;
         showQuestion();
       } catch (err) {
@@ -291,9 +318,31 @@
               <div>恭喜你获得</div>
               <div style="font-size:1.3rem;margin:8px 0;color:var(--accent);">${result.prize.name}</div>
               <div class="text-sm text-muted">${result.prize.description}</div>
+              ${result.redeem_code ? `
+              <div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;border:1px dashed var(--primary);">
+                <div class="text-sm text-muted">兑换码</div>
+                <div style="font-size:1.2rem;font-weight:700;color:var(--primary);letter-spacing:2px;margin-top:4px;">${result.redeem_code}</div>
+                <div class="text-sm text-muted" style="margin-top:4px;">请凭此兑换码领取奖品</div>
+              </div>` : ''}
             </div>
           `;
           document.getElementById('register-area').classList.remove('hidden');
+          // 自动填充已登录用户信息
+          const user = Auth.getUser();
+          if (user) {
+            document.getElementById('register-info').innerHTML = `
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+                <div><span class="text-muted text-sm">姓名：</span>${user.name || '-'}</div>
+                <div><span class="text-muted text-sm">电话：</span>${user.phone || '-'}</div>
+                <div><span class="text-muted text-sm">学校：</span>${user.school || '-'}</div>
+                <div><span class="text-muted text-sm">班级：</span>${user.grade || ''} ${user.class || ''}</div>
+              </div>
+            `;
+            // 自动提交登记
+            submitRegister();
+          } else {
+            document.getElementById('register-info').innerHTML = '<p class="text-muted">加载用户信息中...</p>';
+          }
         } else {
           statusText.textContent = '很遗憾，这次没有中奖';
           resultDiv.innerHTML = `
@@ -315,30 +364,20 @@
     }
 
     async function submitRegister() {
-      const name = document.getElementById('reg-name').value.trim();
-      const school = document.getElementById('reg-school').value.trim();
-      const grade = document.getElementById('reg-grade').value.trim();
-      const className = document.getElementById('reg-class').value.trim();
-      const phone = document.getElementById('reg-phone').value.trim();
-
-      if (!name || !school || !grade || !className) {
-        Utils.showToast('请填写完整信息', 'error');
-        return;
-      }
-
-      if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
-        Utils.showToast('请输入正确的手机号', 'error');
+      const user = Auth.getUser();
+      if (!user) {
+        Utils.showToast('请先登录', 'error');
         return;
       }
 
       try {
         await API.post('/api/quiz/register', {
           openid: Auth.getOpenid(),
-          name,
-          school,
-          grade,
-          class: className,
-          phone
+          name: user.name,
+          school: user.school,
+          grade: user.grade,
+          class: user.class,
+          phone: user.phone
         });
         Utils.showToast('登记成功！');
         document.getElementById('register-area').innerHTML = 
@@ -349,6 +388,39 @@
     }
 
     initApp();
+    loadMyPrizes();
+
+    async function loadMyPrizes() {
+      try {
+        const records = await API.get('/api/my-prizes');
+        const list = document.getElementById('my-prizes-list');
+        if (!records || records.length === 0) {
+          list.innerHTML = '<p class="text-muted text-sm">暂无中奖记录，答题全对即可参与抽奖</p>';
+          return;
+        }
+        const statusMap = {
+          'pending': { label: '待核销', color: '#ff9800', bg: '#fff3e0' },
+          'claimed': { label: '已核销', color: '#4caf50', bg: '#e8f5e9' },
+          'rejected': { label: '已拒绝', color: '#f44336', bg: '#ffebee' }
+        };
+        list.innerHTML = records.map(r => {
+          const s = statusMap[r.prize_status] || statusMap['pending'];
+          return `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--bg);">
+            <div>
+              <div style="font-weight:600;">${r.prize}</div>
+              <div class="text-sm text-muted">${new Date(r.created_at).toLocaleString('zh-CN')}</div>
+            </div>
+            <div style="text-align:right;">
+              <span style="padding:2px 8px;border-radius:12px;font-size:0.8rem;background:${s.bg};color:${s.color};">${s.label}</span>
+              ${r.redeem_code ? `<div style="font-family:monospace;font-size:0.85rem;color:var(--primary);margin-top:2px;">${r.redeem_code}</div>` : ''}
+            </div>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        document.getElementById('my-prizes-list').innerHTML = '<p class="text-muted text-sm">暂无中奖记录</p>';
+      }
+    }
   </script>
 </body>
 </html>

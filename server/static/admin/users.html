@@ -13,6 +13,10 @@
     <div class="main-content">
       <div class="page-header">
         <h2>👥 用户管理</h2>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="search-input" placeholder="搜索姓名/学校/手机号..." style="padding:6px 12px;border:1px solid #ddd;border-radius:6px;width:240px;" oninput="loadUsers(1)">
+          <button class="btn btn-outline btn-sm" onclick="exportUsers()">📥 导出CSV</button>
+        </div>
       </div>
 
       <div class="card">
@@ -21,51 +25,65 @@
             <thead>
               <tr>
                 <th>ID</th>
-                <th>OpenID</th>
                 <th>姓名</th>
+                <th>手机号</th>
                 <th>学校</th>
                 <th>年级</th>
                 <th>班级</th>
+                <th>答题次数</th>
+                <th>打卡天数</th>
                 <th>注册时间</th>
               </tr>
             </thead>
             <tbody id="users-table"></tbody>
           </table>
         </div>
+        <div id="pagination"></div>
       </div>
     </div>
   </div>
 
   <script src="js/admin.js"></script>
   <script>
-    if (!AdminAuth.checkAuth()) {
-      location.href = 'login.html';
-    }
+    if (!AdminAuth.checkAuth()) location.href = 'login.html';
 
-    async function loadUsers() {
+    let currentPage = 1;
+
+    async function loadUsers(page = 1) {
+      currentPage = page;
+      const keyword = document.getElementById('search-input').value.trim();
       try {
-        const users = await AdminAPI.get('/admin/api/users');
+        const result = await AdminAPI.get(`/admin/api/users?page=${page}&limit=20&keyword=${encodeURIComponent(keyword)}`);
+        const { data: users, total, limit } = result;
         const tbody = document.getElementById('users-table');
         
         if (users.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无用户</td></tr>';
-          return;
+          tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无用户</td></tr>';
+        } else {
+          tbody.innerHTML = users.map(u => `
+            <tr>
+              <td>${u.id}</td>
+              <td style="font-weight:600;">${u.name || '-'}</td>
+              <td>${u.phone || '-'}</td>
+              <td>${u.school || '-'}</td>
+              <td>${u.grade || '-'}</td>
+              <td>${u.class || '-'}</td>
+              <td>${u.quiz_count || 0}</td>
+              <td>${u.checkin_days || 0}</td>
+              <td>${AdminUtils.formatDate(u.created_at)}</td>
+            </tr>
+          `).join('');
         }
+        AdminUtils.renderPagination('pagination', total, page, limit, 'loadUsers');
+      } catch (err) { console.error(err); }
+    }
 
-        tbody.innerHTML = users.map(u => `
-          <tr>
-            <td>${u.id}</td>
-            <td class="text-sm">${u.openid?.substring(0, 20)}...</td>
-            <td>${u.name || '-'}</td>
-            <td>${u.school || '-'}</td>
-            <td>${u.grade || '-'}</td>
-            <td>${u.class || '-'}</td>
-            <td>${AdminUtils.formatDate(u.created_at)}</td>
-          </tr>
-        `).join('');
-      } catch (err) {
-        console.error('加载用户失败:', err);
-      }
+    async function exportUsers() {
+      try {
+        const result = await AdminAPI.get('/admin/api/users?page=1&limit=9999');
+        AdminUtils.exportCSV('用户列表', ['ID','姓名','手机号','学校','年级','班级','答题次数','打卡天数','注册时间'],
+          result.data.map(u => [u.id, u.name, u.phone, u.school, u.grade, u.class, u.quiz_count, u.checkin_days, u.created_at]));
+      } catch (err) { AdminUtils.showToast('导出失败', 'error'); }
     }
 
     loadUsers();

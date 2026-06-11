@@ -13,6 +13,7 @@
     <div class="main-content">
       <div class="page-header">
         <h2>📋 答题记录</h2>
+        <button class="btn btn-outline btn-sm" onclick="exportRecords()">📥 导出CSV</button>
       </div>
 
       <div class="card">
@@ -24,50 +25,60 @@
                 <th>用户</th>
                 <th>学校</th>
                 <th>年级</th>
+                <th>电话</th>
                 <th>分类</th>
                 <th>得分</th>
                 <th>奖品</th>
+                <th>核销状态</th>
                 <th>时间</th>
               </tr>
             </thead>
             <tbody id="records-table"></tbody>
           </table>
         </div>
+        <div id="pagination"></div>
       </div>
     </div>
   </div>
 
   <script src="js/admin.js"></script>
   <script>
-    if (!AdminAuth.checkAuth()) {
-      location.href = 'login.html';
-    }
+    if (!AdminAuth.checkAuth()) location.href = 'login.html';
 
-    async function loadRecords() {
+    async function loadRecords(page = 1) {
       try {
-        const records = await AdminAPI.get('/admin/api/quiz-records');
+        const result = await AdminAPI.get(`/admin/api/quiz-records?page=${page}&limit=20`);
+        const { data: records, total, limit } = result;
         const tbody = document.getElementById('records-table');
         
         if (records.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无记录</td></tr>';
-          return;
+          tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">暂无记录</td></tr>';
+        } else {
+          tbody.innerHTML = records.map(r => `
+            <tr>
+              <td>${r.id}</td>
+              <td>${r.name || '匿名'}</td>
+              <td>${r.school || '-'}</td>
+              <td>${r.grade || '-'}</td>
+              <td>${r.phone || '-'}</td>
+              <td>${AdminUtils.getGradeLabel(r.category)}</td>
+              <td><span class="${r.score >= 3 ? 'text-primary' : 'text-muted'}" style="font-weight:600;">${r.score}/${r.total}</span></td>
+              <td>${r.prize ? `<span class="badge badge-accent">${r.prize}</span>` : '-'}</td>
+              <td>${r.prize ? `<span class="badge ${r.prize_status === 'claimed' ? 'badge-accent' : r.prize_status === 'rejected' ? 'badge-error' : 'badge-outline'}">${r.prize_status === 'claimed' ? '已核销' : r.prize_status === 'rejected' ? '已拒绝' : '待核销'}</span>` : '-'}</td>
+              <td>${AdminUtils.formatDate(r.created_at)}</td>
+            </tr>
+          `).join('');
         }
+        AdminUtils.renderPagination('pagination', total, page, limit, 'loadRecords');
+      } catch (err) { console.error(err); }
+    }
 
-        tbody.innerHTML = records.map(r => `
-          <tr>
-            <td>${r.id}</td>
-            <td>${r.name || '匿名'}</td>
-            <td>${r.school || '-'}</td>
-            <td>${r.grade || '-'}</td>
-            <td>${AdminUtils.getGradeLabel(r.category)}</td>
-            <td><span class="${r.score >= 3 ? 'text-primary' : 'text-muted'}" style="font-weight:600;">${r.score}/${r.total}</span></td>
-            <td>${r.prize ? `<span class="badge badge-accent">${r.prize}</span>` : '-'}</td>
-            <td>${AdminUtils.formatDate(r.created_at)}</td>
-          </tr>
-        `).join('');
-      } catch (err) {
-        console.error('加载记录失败:', err);
-      }
+    async function exportRecords() {
+      try {
+        const result = await AdminAPI.get('/admin/api/quiz-records?page=1&limit=9999');
+        AdminUtils.exportCSV('答题记录', ['ID','姓名','学校','年级','电话','分类','得分','奖品','核销状态','时间'],
+          result.data.map(r => [r.id, r.name, r.school, r.grade, r.phone, r.category, `${r.score}/${r.total}`, r.prize, r.prize_status, r.created_at]));
+      } catch (err) { AdminUtils.showToast('导出失败', 'error'); }
     }
 
     loadRecords();
