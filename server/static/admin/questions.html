@@ -13,7 +13,14 @@
     <div class="main-content">
       <div class="page-header">
         <h2>📝 题库管理</h2>
-        <button class="btn btn-primary" onclick="showAddModal()">➕ 添加题目</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="showAddModal()">➕ 添加题目</button>
+          <button class="btn btn-outline" onclick="downloadTemplate()">📥 下载导入模板</button>
+          <label class="btn btn-accent" style="cursor:pointer;">
+            📤 导入Excel
+            <input type="file" accept=".xlsx,.xls" onchange="importExcel(event)" style="display:none;">
+          </label>
+        </div>
       </div>
 
       <div class="card">
@@ -196,6 +203,52 @@
         AdminUtils.showToast('删除成功');
         loadQuestions();
       } catch (err) { AdminUtils.showToast('删除失败', 'error'); }
+    }
+
+    function downloadTemplate() {
+      const token = AdminAuth.getToken();
+      const link = document.createElement('a');
+      link.href = `/admin/api/questions/template?token=${token}`;
+      link.download = '题库导入模板.xlsx';
+      link.click();
+    }
+
+    async function importExcel(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      if (!confirm(`确认导入文件 "${file.name}"？`)) {
+        event.target.value = '';
+        return;
+      }
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      try {
+        const res = await fetch('/admin/api/questions/import', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${AdminAuth.getToken()}` },
+          body: formData
+        });
+        const result = await res.json();
+        
+        if (result.success) {
+          let msg = `成功导入 ${result.imported} 题`;
+          if (result.errors.length > 0) {
+            msg += `，${result.errors.length} 条错误：\n` + result.errors.slice(0, 5).join('\n');
+            if (result.errors.length > 5) msg += `\n...等共${result.errors.length}条错误`;
+          }
+          AdminUtils.showToast(msg, result.errors.length > 0 ? 'error' : 'success');
+          loadQuestions();
+        } else {
+          AdminUtils.showToast(result.error || '导入失败', 'error');
+        }
+      } catch (err) {
+        AdminUtils.showToast('导入失败: ' + err.message, 'error');
+      }
+      
+      event.target.value = '';
     }
 
     loadQuestions();

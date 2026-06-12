@@ -201,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
           📝 <span>题库管理</span>
         </a></li>
         <li><a href="works-review.html" class="${location.pathname.includes('works') ? 'active' : ''}">
-          🎨 <span>作品审核</span>
+          🎨 <span>作品管理</span>
         </a></li>
         <li><a href="prizes.html" class="${location.pathname.includes('prizes') ? 'active' : ''}">
           🎁 <span>奖品管理</span>

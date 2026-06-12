@@ -14,14 +14,6 @@
     </div>
 
     <div class="container">
-      <!-- 答题获奖 -->
-      <div class="card">
-        <div class="card-title">🎁 答题抽奖获奖</div>
-        <div id="quiz-winners">
-          <p class="text-muted">加载中...</p>
-        </div>
-      </div>
-
       <!-- 作品获奖 -->
       <div class="card">
         <div class="card-title">🎨 作品征集获奖</div>
@@ -36,44 +28,17 @@
 
   <script src="js/app.js"></script>
   <script>
-    async function loadQuizWinners() {
-      try {
-        const winners = await API.get('/api/quiz/winners');
-        const container = document.getElementById('quiz-winners');
-        
-        if (winners.length === 0) {
-          container.innerHTML = '<p class="text-muted">暂无获奖记录</p>';
-          return;
-        }
-
-        container.innerHTML = winners.map((w, i) => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--rule);${i === winners.length - 1 ? 'border-bottom:none;' : ''}">
-            <div>
-              <div style="font-weight:600;">${w.name || '匿名用户'}</div>
-              <div class="text-sm text-muted">${w.school || ''} ${w.grade || ''} ${w.class || ''}</div>
-            </div>
-            <div style="text-align:right;">
-              <span class="badge badge-accent">${w.prize}</span>
-              <div class="text-sm text-muted">${Utils.formatDate(w.created_at)}</div>
-            </div>
-          </div>
-        `).join('');
-      } catch (err) {
-        document.getElementById('quiz-winners').innerHTML = '<p class="text-muted">加载失败</p>';
-      }
-    }
-
     async function loadWorksWinners() {
       try {
         const winners = await API.get('/api/works/winners');
         const container = document.getElementById('works-winners');
         
         if (winners.length === 0) {
-          container.innerHTML = '<p class="text-muted">暂无获奖记录</p>';
+          container.innerHTML = '<p class="text-muted">暂无获奖记录，敬请期待</p>';
           return;
         }
 
-        container.innerHTML = winners.slice(0, 10).map((w, i) => `
+        container.innerHTML = winners.map((w, i) => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--rule);${i === winners.length - 1 ? 'border-bottom:none;' : ''}">
             <div style="display:flex;align-items:center;gap:12px;">
               <div style="font-size:1.5rem;">${i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1)}</div>
@@ -93,7 +58,6 @@
     }
 
     initApp();
-    loadQuizWinners();
     loadWorksWinners();
   </script>
 </body>

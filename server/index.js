@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const XLSX = require('xlsx');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
@@ -64,7 +65,7 @@ const upload = multer({
 
 // ===== 认证中间件 =====
 function authMiddleware(req, res, next) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
   if (!token) {
     return res.status(401).json({ error: '未提供认证令牌' });
   }
@@ -269,17 +270,26 @@ app.post('/api/quiz/submit', userAuth, async (req, res) => {
     
     await dbAsync.run('INSERT INTO quiz_records (openid, category, score, total) VALUES (?, ?, ?, ?)', [openid, category, score, total]);
     
-    res.json({ score, total, passed, results });
+    // 检查是否已抽过奖
+    const hasWon = await dbAsync.get('SELECT id FROM quiz_records WHERE openid = ? AND prize IS NOT NULL AND prize != \'\' LIMIT 1', [openid]);
+    
+    res.json({ score, total, passed, hasWon: !!hasWon, results });
   } catch (err) {
     res.status(500).json({ error: '提交失败' });
   }
 });
 
-// 抽奖（需答题全对才能参与）
+// 抽奖（需答题全对才能参与，每人限抽一次）
 app.post('/api/quiz/lottery', userAuth, async (req, res) => {
   const openid = req.userOpenid;
   
   try {
+    // 检查是否已经抽过奖
+    const hasWon = await dbAsync.get('SELECT id FROM quiz_records WHERE openid = ? AND prize IS NOT NULL AND prize != \'\' LIMIT 1', [openid]);
+    if (hasWon) {
+      return res.status(400).json({ error: '您已抽过奖了，每人限抽一次', prize: null, redeem_code: null });
+    }
+    
     // 校验是否有答题全对记录
     const passedRecord = await dbAsync.get('SELECT id FROM quiz_records WHERE openid = ? AND score = total AND prize IS NULL ORDER BY id DESC LIMIT 1', [openid]);
     if (!passedRecord) {
@@ -439,9 +449,8 @@ app.get('/api/works/winners', async (req, res) => {
       SELECT w.*, u.name as author_name, u.school 
       FROM works w 
       LEFT JOIN users u ON w.openid = u.openid 
-      WHERE w.status = 'approved'
+      WHERE w.status = 'approved' AND w.winner = 1
       ORDER BY w.votes DESC
-      LIMIT 10
     `);
     
     res.json(winners.map(w => ({ ...w, images: w.images ? JSON.parse(w.images) : [] })));
@@ -692,31 +701,161 @@ app.put('/admin/api/questions/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Excel模板下载
+app.get('/admin/api/questions/template', authMiddleware, async (req, res) => {
+  try {
+    const wb = XLSX.utils.book_new();
+    const data = [
+      ['分类', '题型', '题目', '选项A', '选项B', '选项C', '选项D', '正确答案', '解析'],
+      ['primary_low', 'single', '每天应该刷几次牙？', '1次', '2次', '3次', '不用刷', 'B', '早晚各刷一次牙。'],
+      ['primary_low', 'judge', '看电视时可以离电视很近。', '正确', '错误', '', '', 'B', '应该保持适当距离。'],
+      ['primary_high', 'single', '以下哪种做法有利于保护视力？', '长时间看手机', '多做户外运动', '在暗处看书', '躺着看书', 'B', '每天2小时以上户外活动可有效预防近视。']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    // 设置列宽
+    ws['!cols'] = [
+      {wch:14},{wch:8},{wch:40},{wch:16},{wch:16},{wch:16},{wch:16},{wch:10},{wch:30}
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, '题库模板');
+    const buf = XLSX.write(wb, {type:'buffer', bookType:'xlsx'});
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=question_template.xlsx');
+    res.send(buf);
+  } catch (err) {
+    console.error('下载模板失败:', err);
+    res.status(500).json({ error: '下载模板失败' });
+  }
+});
+
+// Excel导入题库
+app.post('/admin/api/questions/import', authMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: '请上传文件' });
+    }
+    
+    const workbook = XLSX.readFile(req.file.path);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    
+    // 跳过表头
+    const dataRows = rows.slice(1);
+    let imported = 0;
+    let errors = [];
+    
+    for (let i = 0; i < dataRows.length; i++) {
+      const row = dataRows[i];
+      if (!row[0] || !row[1] || !row[2] || !row[7]) {
+        errors.push(`第${i + 2}行：分类、题型、题目、答案不能为空`);
+        continue;
+      }
+      
+      const category = String(row[0]).trim();
+      const type = String(row[1]).trim();
+      const question = String(row[2]).trim();
+      const optA = String(row[3] || '').trim();
+      const optB = String(row[4] || '').trim();
+      const optC = String(row[5] || '').trim();
+      const optD = String(row[6] || '').trim();
+      const answer = String(row[7]).trim();
+      const explanation = String(row[8] || '').trim();
+      
+      // 校验分类
+      const validCategories = ['primary_low', 'primary_high', 'middle', 'high'];
+      if (!validCategories.includes(category)) {
+        errors.push(`第${i + 2}行：分类无效，应为 ${validCategories.join('/')}`);
+        continue;
+      }
+      
+      // 校验题型
+      if (!['single', 'judge', 'multi'].includes(type)) {
+        errors.push(`第${i + 2}行：题型无效，应为 single/judge/multi`);
+        continue;
+      }
+      
+      // 构建选项
+      const options = [optA, optB, optC, optD].filter(o => o);
+      if (options.length < 2) {
+        errors.push(`第${i + 2}行：至少需要2个选项`);
+        continue;
+      }
+      
+      await dbAsync.run(
+        'INSERT INTO questions (category, type, question, options, answer, explanation) VALUES (?, ?, ?, ?, ?, ?)',
+        [category, type, question, JSON.stringify(options), answer, explanation]
+      );
+      imported++;
+    }
+    
+    // 删除临时文件
+    const fs = require('fs');
+    fs.unlinkSync(req.file.path);
+    
+    res.json({ success: true, imported, errors, total: dataRows.length });
+  } catch (err) {
+    console.error('导入失败:', err);
+    res.status(500).json({ error: '导入失败: ' + err.message });
+  }
+});
+
 // 作品审核
 app.get('/admin/api/works', authMiddleware, async (req, res) => {
   const status = req.query.status || 'pending';
+  const { page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
   try {
+    let whereClause = 'WHERE w.status = ?';
+    let params = [status];
+    if (status === 'all') {
+      whereClause = '';
+      params = [];
+    }
+    
     const works = await dbAsync.all(`
       SELECT w.*, u.name as author_name, u.school 
       FROM works w 
       LEFT JOIN users u ON w.openid = u.openid 
-      WHERE w.status = ?
-      ORDER BY w.created_at DESC
-    `, [status]);
+      ${whereClause}
+      ORDER BY w.created_at DESC LIMIT ? OFFSET ?
+    `, [...params, parseInt(limit), parseInt(offset)]);
     
-    res.json(works.map(w => ({ ...w, images: w.images ? JSON.parse(w.images) : [] })));
+    const totalResult = await dbAsync.get(`SELECT COUNT(*) as count FROM works w ${whereClause}`, params);
+    
+    res.json({
+      data: works.map(w => ({ ...w, images: w.images ? JSON.parse(w.images) : [] })),
+      total: totalResult.count,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
   } catch (err) {
     res.status(500).json({ error: '获取作品失败' });
   }
 });
 
 app.put('/admin/api/works/:id', authMiddleware, async (req, res) => {
-  const { status } = req.body;
+  const { status, winner } = req.body;
   try {
-    await dbAsync.run('UPDATE works SET status = ? WHERE id = ?', [status, req.params.id]);
+    if (winner !== undefined) {
+      await dbAsync.run('UPDATE works SET winner = ? WHERE id = ?', [winner ? 1 : 0, req.params.id]);
+    }
+    if (status) {
+      await dbAsync.run('UPDATE works SET status = ? WHERE id = ?', [status, req.params.id]);
+    }
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: '审核失败' });
+    res.status(500).json({ error: '操作失败' });
+  }
+});
+
+// 删除作品
+app.delete('/admin/api/works/:id', authMiddleware, async (req, res) => {
+  try {
+    await dbAsync.run('DELETE FROM vote_records WHERE work_id = ?', [req.params.id]);
+    await dbAsync.run('DELETE FROM works WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('删除作品失败:', err);
+    res.status(500).json({ error: '删除作品失败' });
   }
 });
 

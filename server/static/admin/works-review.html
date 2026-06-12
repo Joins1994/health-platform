@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>作品审核 - 管理后台</title>
+  <title>作品管理 - 管理后台</title>
   <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
@@ -12,11 +12,12 @@
     
     <div class="main-content">
       <div class="page-header">
-        <h2>🎨 作品审核</h2>
+        <h2>🎨 作品管理</h2>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary ${location.search.includes('pending') || !location.search ? 'active' : ''}" onclick="filterWorks('pending')">待审核</button>
-          <button class="btn btn-outline" onclick="filterWorks('approved')">已通过</button>
-          <button class="btn btn-outline" onclick="filterWorks('rejected')">已拒绝</button>
+          <button class="btn btn-primary btn-sm" onclick="filterWorks('pending',1)">待审核</button>
+          <button class="btn btn-outline btn-sm" onclick="filterWorks('approved',1)">已通过</button>
+          <button class="btn btn-outline btn-sm" onclick="filterWorks('rejected',1)">已拒绝</button>
+          <button class="btn btn-outline btn-sm" onclick="filterWorks('all',1)">全部</button>
         </div>
       </div>
 
@@ -30,6 +31,7 @@
                 <th>作者</th>
                 <th>学校</th>
                 <th>票数</th>
+                <th>获奖</th>
                 <th>提交时间</th>
                 <th>操作</th>
               </tr>
@@ -37,6 +39,7 @@
             <tbody id="works-table"></tbody>
           </table>
         </div>
+        <div id="pagination"></div>
       </div>
     </div>
   </div>
@@ -54,24 +57,24 @@
 
   <script src="js/admin.js"></script>
   <script>
-    if (!AdminAuth.checkAuth()) {
-      location.href = 'login.html';
-    }
+    if (!AdminAuth.checkAuth()) location.href = 'login.html';
 
     let currentStatus = 'pending';
 
-    function filterWorks(status) {
+    function filterWorks(status, page = 1) {
       currentStatus = status;
-      loadWorks();
+      loadWorks(page);
     }
 
-    async function loadWorks() {
+    async function loadWorks(page = 1) {
       try {
-        const works = await AdminAPI.get(`/admin/api/works?status=${currentStatus}`);
+        const result = await AdminAPI.get(`/admin/api/works?status=${currentStatus}&page=${page}&limit=20`);
+        if (!result) return;
+        const { data: works, total, limit } = result;
         const tbody = document.getElementById('works-table');
         
         if (works.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">暂无${currentStatus === 'pending' ? '待审核' : currentStatus === 'approved' ? '已通过' : '已拒绝'}作品</td></tr>`;
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无作品</td></tr>';
           return;
         }
 
@@ -82,58 +85,86 @@
             <td>${w.author_name || '匿名'}</td>
             <td>${w.school || '-'}</td>
             <td>${w.votes}</td>
+            <td>${w.winner ? '<span class="badge badge-accent">获奖</span>' : '-'}</td>
             <td>${AdminUtils.formatDate(w.created_at)}</td>
             <td>
-              ${currentStatus === 'pending' ? `
-                <button class="btn btn-success btn-sm mr-1" onclick="reviewWork(${w.id}, 'approved')">通过</button>
+              ${w.status === 'pending' ? `
+                <button class="btn btn-success btn-sm" onclick="reviewWork(${w.id}, 'approved')">通过</button>
                 <button class="btn btn-danger btn-sm" onclick="reviewWork(${w.id}, 'rejected')">拒绝</button>
-              ` : `<span class="badge badge-${currentStatus === 'approved' ? 'success' : 'error'}">${currentStatus === 'approved' ? '已通过' : '已拒绝'}</span>`}
+              ` : `
+                ${w.status === 'approved' && !w.winner ? `<button class="btn btn-outline btn-sm" style="color:#ff9800;border-color:#ff9800;" onclick="setWinner(${w.id}, true)">设为获奖</button>` : ''}
+                ${w.winner ? `<button class="btn btn-outline btn-sm" onclick="setWinner(${w.id}, false)">取消获奖</button>` : ''}
+                ${w.status === 'approved' ? `<button class="btn btn-outline btn-sm" onclick="reviewWork(${w.id}, 'rejected')">下架</button>` : ''}
+                ${w.status === 'rejected' ? `<button class="btn btn-outline btn-sm" onclick="reviewWork(${w.id}, 'approved')">恢复</button>` : ''}
+                <button class="btn btn-outline btn-sm" style="color:#e74c3c;border-color:#e74c3c;" onclick="deleteWork(${w.id})">删除</button>
+              `}
             </td>
           </tr>
         `).join('');
-      } catch (err) {
-        console.error('加载作品失败:', err);
-      }
+        
+        AdminUtils.renderPagination('pagination', total, page, limit, 'loadWorksPage');
+      } catch (err) { console.error(err); }
     }
+
+    function loadWorksPage(page) { loadWorks(page); }
 
     async function showDetail(id) {
       try {
-        const works = await AdminAPI.get(`/admin/api/works?status=${currentStatus}`);
-        const work = works.find(w => w.id === id);
+        const result = await AdminAPI.get(`/admin/api/works?status=${currentStatus}`);
+        if (!result) return;
+        const work = result.data.find(w => w.id === id);
         if (!work) return;
 
         const detail = document.getElementById('work-detail');
         detail.innerHTML = `
           <h4 class="mb-1">${work.title}</h4>
           <p class="text-muted mb-2">${work.description || '暂无描述'}</p>
-          <p class="text-sm text-muted mb-2">作者：${work.author_name || '匿名'} · ${work.school || '未知学校'}</p>
+          <p class="text-sm text-muted mb-2">作者：${work.author_name || '匿名'} · ${work.school || '未知学校'} · ${work.votes}票</p>
           ${work.images && work.images.length > 0 ? `
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:16px 0;">
               ${work.images.map(img => `<img src="${img}" style="width:100%;border-radius:8px;cursor:pointer;" onclick="window.open('${img}')">`).join('')}
             </div>
           ` : '<p class="text-muted">无图片</p>'}
-          <div style="display:flex;gap:8px;margin-top:16px;">
-            ${currentStatus === 'pending' ? `
-              <button class="btn btn-success" onclick="reviewWork(${work.id}, 'approved'); closeModal();">通过</button>
-              <button class="btn btn-danger" onclick="reviewWork(${work.id}, 'rejected'); closeModal();">拒绝</button>
+          <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+            ${work.status === 'pending' ? `
+              <button class="btn btn-success btn-sm" onclick="reviewWork(${work.id}, 'approved'); closeModal();">通过</button>
+              <button class="btn btn-danger btn-sm" onclick="reviewWork(${work.id}, 'rejected'); closeModal();">拒绝</button>
             ` : ''}
+            ${work.status === 'approved' && !work.winner ? `<button class="btn btn-outline btn-sm" style="color:#ff9800;border-color:#ff9800;" onclick="setWinner(${work.id}, true); closeModal();">设为获奖</button>` : ''}
+            ${work.winner ? `<button class="btn btn-outline btn-sm" onclick="setWinner(${work.id}, false); closeModal();">取消获奖</button>` : ''}
+            <button class="btn btn-outline btn-sm" style="color:#e74c3c;border-color:#e74c3c;" onclick="deleteWork(${work.id}); closeModal();">删除</button>
           </div>
         `;
         
         document.getElementById('detail-modal').classList.remove('hidden');
-      } catch (err) {
-        console.error('加载详情失败:', err);
-      }
+      } catch (err) { console.error(err); }
     }
 
     async function reviewWork(id, status) {
       try {
         await AdminAPI.put(`/admin/api/works/${id}`, { status });
-        AdminUtils.showToast(status === 'approved' ? '已通过' : '已拒绝');
+        AdminUtils.showToast(status === 'approved' ? '已通过' : status === 'rejected' ? '已拒绝' : '操作成功');
         loadWorks();
-      } catch (err) {
-        AdminUtils.showToast('操作失败', 'error');
-      }
+      } catch (err) { AdminUtils.showToast(err.message || '操作失败', 'error'); }
+    }
+
+    async function setWinner(id, isWinner) {
+      const action = isWinner ? '设为获奖' : '取消获奖';
+      if (!confirm(`确认${action}？${isWinner ? '获奖作品将在用户端获奖名单中展示。' : ''}`)) return;
+      try {
+        await AdminAPI.put(`/admin/api/works/${id}`, { winner: isWinner });
+        AdminUtils.showToast(`${action}成功`);
+        loadWorks();
+      } catch (err) { AdminUtils.showToast(err.message || '操作失败', 'error'); }
+    }
+
+    async function deleteWork(id) {
+      if (!confirm('确认删除该作品？删除后不可恢复，相关投票记录也会清除。')) return;
+      try {
+        await AdminAPI.delete(`/admin/api/works/${id}`);
+        AdminUtils.showToast('已删除');
+        loadWorks();
+      } catch (err) { AdminUtils.showToast(err.message || '删除失败', 'error'); }
     }
 
     function closeModal() {

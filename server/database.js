@@ -129,6 +129,7 @@ async function initDatabase() {
         video TEXT,
         votes INTEGER DEFAULT 0,
         status TEXT DEFAULT 'pending',
+        winner INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -197,6 +198,10 @@ async function initDatabase() {
       const hash = bcrypt.hashSync('admin123', 10);
       await dbAsync.run('INSERT INTO admins (username, password) VALUES (?, ?)', ['admin', hash]);
     }
+
+    // 兼容旧数据库：添加新字段
+    try { await dbAsync.run('ALTER TABLE works ADD COLUMN winner INTEGER DEFAULT 0'); } catch(e) {}
+    try { await dbAsync.run('ALTER TABLE checkin_prizes ADD COLUMN openid TEXT'); } catch(e) {}
 
     // 初始化打卡任务（21天）
     const taskCount = await dbAsync.get('SELECT COUNT(*) as count FROM checkin_tasks');

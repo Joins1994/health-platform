@@ -32,11 +32,39 @@
         <div style="display:flex;gap:8px;">
           <div class="form-group" style="flex:1;">
             <label class="form-label">年级</label>
-            <input type="text" class="form-input" id="profile-grade" placeholder="如：五年级">
+            <select class="form-input" id="profile-grade">
+              <option value="">请选择</option>
+              <option value="一年级">一年级</option>
+              <option value="二年级">二年级</option>
+              <option value="三年级">三年级</option>
+              <option value="四年级">四年级</option>
+              <option value="五年级">五年级</option>
+              <option value="六年级">六年级</option>
+              <option value="七年级">七年级（初一）</option>
+              <option value="八年级">八年级（初二）</option>
+              <option value="九年级">九年级（初三）</option>
+              <option value="十年级">十年级（高一）</option>
+              <option value="十一年级">十一年级（高二）</option>
+              <option value="十二年级">十二年级（高三）</option>
+            </select>
           </div>
           <div class="form-group" style="flex:1;">
             <label class="form-label">班级</label>
-            <input type="text" class="form-input" id="profile-class" placeholder="如：3班">
+            <select class="form-input" id="profile-class">
+              <option value="">请选择</option>
+              <option value="1班">1班</option>
+              <option value="2班">2班</option>
+              <option value="3班">3班</option>
+              <option value="4班">4班</option>
+              <option value="5班">5班</option>
+              <option value="6班">6班</option>
+              <option value="7班">7班</option>
+              <option value="8班">8班</option>
+              <option value="9班">9班</option>
+              <option value="10班">10班</option>
+              <option value="11班">11班</option>
+              <option value="12班">12班</option>
+            </select>
           </div>
         </div>
         <button class="btn btn-primary btn-block" onclick="saveProfile()">保存修改</button>

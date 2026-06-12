@@ -258,9 +258,15 @@
 
         if (result.passed) {
           document.getElementById('result-emoji').textContent = '🎉';
-          document.getElementById('result-message').innerHTML = 
-            '<span class="badge badge-accent">恭喜！获得抽奖资格</span>';
-          document.getElementById('lottery-area').classList.remove('hidden');
+          // 检查是否已抽过奖
+          if (result.hasWon) {
+            document.getElementById('result-message').innerHTML =
+              '<span class="badge badge-primary">答题全对！您已抽过奖</span>';
+          } else {
+            document.getElementById('result-message').innerHTML = 
+              '<span class="badge badge-accent">恭喜！获得抽奖资格</span>';
+            document.getElementById('lottery-area').classList.remove('hidden');
+          }
         } else {
           document.getElementById('result-emoji').textContent = '💪';
           document.getElementById('result-message').innerHTML =
