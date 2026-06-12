@@ -717,6 +717,62 @@ app.get('/admin/api/users', authMiddleware, async (req, res) => {
   }
 });
 
+// 清理预览：查看将被清理的用户（必须在 /:id 路由之前）
+app.get('/admin/api/users/cleanup-preview', authMiddleware, async (req, res) => {
+  try {
+    const users = await dbAsync.all(`
+      SELECT u.id, u.openid, u.phone, u.name, u.school, u.created_at,
+        (SELECT COUNT(*) FROM quiz_records WHERE openid = u.openid) as quiz_count,
+        (SELECT COUNT(*) FROM checkin_records WHERE openid = u.openid) as checkin_count
+      FROM users u
+      WHERE u.phone IS NULL AND u.password IS NULL AND u.name IS NULL
+      ORDER BY u.created_at ASC
+    `);
+    res.json(users);
+  } catch (err) {
+    console.error('预览失败:', err);
+    res.status(500).json({ error: '预览失败' });
+  }
+});
+
+// 执行清理（需要提供确认参数，必须在 /:id 路由之前）
+app.post('/admin/api/users/cleanup', authMiddleware, async (req, res) => {
+  const { confirmCount } = req.body;
+  
+  try {
+    const preview = await dbAsync.get('SELECT COUNT(*) as count FROM users WHERE phone IS NULL AND password IS NULL AND name IS NULL');
+    const count = preview.count;
+    
+    if (count === 0) {
+      return res.json({ success: true, deleted: 0, message: '没有需要清理的用户' });
+    }
+    
+    if (!confirmCount || parseInt(confirmCount) !== count) {
+      return res.status(400).json({ 
+        error: `确认数量不匹配。当前有 ${count} 条待清理数据，请确认数量后重试。`,
+        pendingCount: count 
+      });
+    }
+    
+    const toDelete = await dbAsync.all('SELECT openid FROM users WHERE phone IS NULL AND password IS NULL AND name IS NULL');
+    const openids = toDelete.map(u => u.openid);
+    
+    for (const openid of openids) {
+      await dbAsync.run('DELETE FROM quiz_records WHERE openid = ?', [openid]);
+      await dbAsync.run('DELETE FROM checkin_records WHERE openid = ?', [openid]);
+      await dbAsync.run('DELETE FROM works WHERE openid = ?', [openid]);
+      await dbAsync.run('DELETE FROM vote_records WHERE openid = ?', [openid]);
+    }
+    
+    const result = await dbAsync.run('DELETE FROM users WHERE phone IS NULL AND password IS NULL AND name IS NULL');
+    
+    res.json({ success: true, deleted: result.changes });
+  } catch (err) {
+    console.error('清理失败:', err);
+    res.status(500).json({ error: '清理失败' });
+  }
+});
+
 // 获取单个用户详情
 app.get('/admin/api/users/:id', authMiddleware, async (req, res) => {
   try {
@@ -784,68 +840,6 @@ app.delete('/admin/api/users/:id', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('删除用户失败:', err);
     res.status(500).json({ error: '删除用户失败' });
-  }
-});
-
-// 清理预览：查看将被清理的用户
-app.get('/admin/api/users/cleanup-preview', authMiddleware, async (req, res) => {
-  try {
-    // 严格条件：同时没有手机号、密码、姓名，即从未通过新系统注册的用户
-    const users = await dbAsync.all(`
-      SELECT u.id, u.openid, u.phone, u.name, u.school, u.created_at,
-        (SELECT COUNT(*) FROM quiz_records WHERE openid = u.openid) as quiz_count,
-        (SELECT COUNT(*) FROM checkin_records WHERE openid = u.openid) as checkin_count
-      FROM users u
-      WHERE u.phone IS NULL AND u.password IS NULL AND u.name IS NULL
-      ORDER BY u.created_at ASC
-    `);
-    res.json(users);
-  } catch (err) {
-    console.error('预览失败:', err);
-    res.status(500).json({ error: '预览失败' });
-  }
-});
-
-// 执行清理（需要提供确认参数）
-app.post('/admin/api/users/cleanup', authMiddleware, async (req, res) => {
-  const { confirmCount } = req.body;
-  
-  try {
-    // 先预览数量
-    const preview = await dbAsync.get('SELECT COUNT(*) as count FROM users WHERE phone IS NULL AND password IS NULL AND name IS NULL');
-    const count = preview.count;
-    
-    if (count === 0) {
-      return res.json({ success: true, deleted: 0, message: '没有需要清理的用户' });
-    }
-    
-    // 必须确认数量一致才执行（防止误操作）
-    if (!confirmCount || parseInt(confirmCount) !== count) {
-      return res.status(400).json({ 
-        error: `确认数量不匹配。当前有 ${count} 条待清理数据，请确认数量后重试。`,
-        pendingCount: count 
-      });
-    }
-    
-    // 收集要删除的openid
-    const toDelete = await dbAsync.all('SELECT openid FROM users WHERE phone IS NULL AND password IS NULL AND name IS NULL');
-    const openids = toDelete.map(u => u.openid);
-    
-    // 逐个删除关联数据（SQLite不支持IN中大量参数的替代方案）
-    for (const openid of openids) {
-      await dbAsync.run('DELETE FROM quiz_records WHERE openid = ?', [openid]);
-      await dbAsync.run('DELETE FROM checkin_records WHERE openid = ?', [openid]);
-      await dbAsync.run('DELETE FROM works WHERE openid = ?', [openid]);
-      await dbAsync.run('DELETE FROM vote_records WHERE openid = ?', [openid]);
-    }
-    
-    // 删除用户
-    const result = await dbAsync.run('DELETE FROM users WHERE phone IS NULL AND password IS NULL AND name IS NULL');
-    
-    res.json({ success: true, deleted: result.changes });
-  } catch (err) {
-    console.error('清理失败:', err);
-    res.status(500).json({ error: '清理失败' });
   }
 });
 
