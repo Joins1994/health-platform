@@ -34,12 +34,12 @@ const AdminAPI = {
       if (res.status === 401) { AdminAuth.logout(); return null; }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || '请求失败');
+        throw new Error(err.error || `请求失败(${res.status})`);
       }
       return res.json();
     } catch (err) {
-      if (err.message === '请求失败') throw err;
-      throw new Error('网络错误');
+      if (err.message.includes('请求失败') || err.message.includes('网络')) throw err;
+      throw new Error(`网络错误: ${err.message}`);
     }
   },
 
@@ -56,12 +56,12 @@ const AdminAPI = {
       if (res.status === 401) { AdminAuth.logout(); return null; }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || '请求失败');
+        throw new Error(err.error || `请求失败(${res.status})`);
       }
       return res.json();
     } catch (err) {
-      if (err.message === '请求失败') throw err;
-      throw new Error('网络错误');
+      if (err.message.includes('请求失败') || err.message.includes('网络')) throw err;
+      throw new Error(`网络错误: ${err.message}`);
     }
   },
 
@@ -78,12 +78,12 @@ const AdminAPI = {
       if (res.status === 401) { AdminAuth.logout(); return null; }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || '请求失败');
+        throw new Error(err.error || `请求失败(${res.status})`);
       }
       return res.json();
     } catch (err) {
-      if (err.message === '请求失败') throw err;
-      throw new Error('网络错误');
+      if (err.message.includes('请求失败') || err.message.includes('网络')) throw err;
+      throw new Error(`网络错误: ${err.message}`);
     }
   },
 
@@ -96,12 +96,12 @@ const AdminAPI = {
       if (res.status === 401) { AdminAuth.logout(); return null; }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || '请求失败');
+        throw new Error(err.error || `请求失败(${res.status})`);
       }
       return res.json();
     } catch (err) {
-      if (err.message === '请求失败') throw err;
-      throw new Error('网络错误');
+      if (err.message.includes('请求失败') || err.message.includes('网络')) throw err;
+      throw new Error(`网络错误: ${err.message}`);
     }
   }
 };
