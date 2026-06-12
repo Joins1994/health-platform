@@ -43,6 +43,9 @@
         </div>
       </div>
 
+      <!-- 打卡奖品 -->
+      <div id="checkin-prize" class="hidden"></div>
+
       <!-- 主题说明 -->
       <div class="card">
         <div class="card-title">📋 闯关主题</div>
@@ -110,6 +113,22 @@
         
         if (progress.progress >= 100) {
           document.getElementById('achievement-badge').classList.remove('hidden');
+        }
+        
+        // 显示打卡奖品
+        if (progress.checkinPrize) {
+          const prizeDiv = document.getElementById('checkin-prize');
+          prizeDiv.classList.remove('hidden');
+          const statusText = progress.checkinPrize.prize_status === 'claimed' ? '已核销' : 
+                             progress.checkinPrize.prize_status === 'rejected' ? '已拒绝' : '待核销';
+          prizeDiv.innerHTML = `
+            <div class="card" style="background:linear-gradient(135deg,#fff8e1,#fff3e0);border:1px solid #ffb74d;">
+              <div class="card-title">🏆 21天打卡完成！</div>
+              <p style="margin-bottom:8px;">恭喜获得 <strong>${progress.checkinPrize.prize_name}</strong></p>
+              <p class="text-sm text-muted">兑换码：<strong style="font-family:monospace;font-size:1.1rem;color:#e65100;">${progress.checkinPrize.redeem_code}</strong></p>
+              <p class="text-sm text-muted">状态：<span class="badge ${progress.checkinPrize.prize_status === 'claimed' ? 'badge-primary' : 'badge-accent'}">${statusText}</span></p>
+            </div>
+          `;
         }
         
         renderCheckinGrid();
@@ -228,6 +247,9 @@
         
         if (result.success) {
           Utils.showToast('打卡成功！');
+          if (result.prize) {
+            Utils.showToast('🎉 恭喜完成21天打卡，获得奖品！', 'success');
+          }
           // 从后端重新获取进度，确保多设备同步
           await loadProgress();
         }

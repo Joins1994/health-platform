@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>打卡奖品 - 管理后台</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <div id="sidebar-container"></div>
+    
+    <div class="main-content">
+      <div class="page-header">
+        <h2>🏆 打卡奖品核销</h2>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="loadPrizes('pending',1)">待核销</button>
+          <button class="btn btn-outline btn-sm" onclick="loadPrizes('claimed',1)">已核销</button>
+          <button class="btn btn-outline btn-sm" onclick="loadPrizes('rejected',1)">已拒绝</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>姓名</th>
+                <th>学校</th>
+                <th>班级</th>
+                <th>电话</th>
+                <th>奖品</th>
+                <th>兑换码</th>
+                <th>完成时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="prizes-table"></tbody>
+          </table>
+        </div>
+        <div id="pagination"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    if (!AdminAuth.checkAuth()) location.href = 'login.html';
+
+    let currentStatus = 'pending';
+
+    async function loadPrizes(status, page = 1) {
+      currentStatus = status;
+      try {
+        const result = await AdminAPI.get(`/admin/api/checkin-prizes?status=${status}&page=${page}&limit=20`);
+        const { data: records, total, limit } = result;
+        const tbody = document.getElementById('prizes-table');
+        
+        if (records.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无记录</td></tr>';
+        } else {
+          tbody.innerHTML = records.map(r => `
+            <tr>
+              <td>${r.id}</td>
+              <td>${r.name || '匿名'}</td>
+              <td>${r.school || '-'}</td>
+              <td>${r.grade || ''} ${r.class || ''}</td>
+              <td>${r.phone || '-'}</td>
+              <td><span class="badge badge-accent">${r.prize_name}</span></td>
+              <td style="font-family:monospace;font-weight:600;color:var(--primary);">${r.redeem_code || '-'}</td>
+              <td>${AdminUtils.formatDate(r.created_at)}</td>
+              <td>
+                ${status === 'pending' ? `
+                  <button class="btn btn-primary btn-sm" onclick="claimPrize(${r.id})">核销</button>
+                  <button class="btn btn-outline btn-sm" style="color:#e74c3c;border-color:#e74c3c;" onclick="rejectPrize(${r.id})">拒绝</button>
+                ` : `
+                  <span class="badge ${status === 'claimed' ? 'badge-accent' : 'badge-error'}">${status === 'claimed' ? '已核销' : '已拒绝'}</span>
+                  ${r.claimed_at ? `<br><span class="text-sm text-muted">${AdminUtils.formatDate(r.claimed_at)}</span>` : ''}
+                `}
+              </td>
+            </tr>
+          `).join('');
+        }
+        AdminUtils.renderPagination('pagination', total, page, limit, 'loadPrizesPage');
+      } catch (err) { console.error(err); }
+    }
+
+    function loadPrizesPage(page) { loadPrizes(currentStatus, page); }
+
+    async function claimPrize(id) {
+      if (!confirm('确认核销该打卡奖品？')) return;
+      try {
+        await AdminAPI.put(`/admin/api/checkin-prizes/${id}`, { action: 'claim' });
+        AdminUtils.showToast('核销成功');
+        loadPrizes(currentStatus, 1);
+      } catch (err) { AdminUtils.showToast(err.message || '核销失败', 'error'); }
+    }
+
+    async function rejectPrize(id) {
+      if (!confirm('确认拒绝？')) return;
+      try {
+        await AdminAPI.put(`/admin/api/checkin-prizes/${id}`, { action: 'reject' });
+        AdminUtils.showToast('已拒绝');
+        loadPrizes(currentStatus, 1);
+      } catch (err) { AdminUtils.showToast(err.message || '操作失败', 'error'); }
+    }
+
+    loadPrizes('pending');
+  </script>
+</body>
+</html>

@@ -218,6 +218,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <li><a href="checkin-records.html" class="${location.pathname.includes('checkin') ? 'active' : ''}">
           📅 <span>打卡记录</span>
         </a></li>
+        <li><a href="checkin-prizes.html" class="${location.pathname.includes('checkin-prizes') ? 'active' : ''}">
+          🏆 <span>打卡奖品</span>
+        </a></li>
         <li><a href="#" onclick="AdminAuth.logout(); return false;">
           🚪 <span>退出登录</span>
         </a></li>

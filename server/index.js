@@ -520,6 +520,20 @@ app.post('/api/checkin', userAuth, upload.single('proof'), async (req, res) => {
     
     await dbAsync.run('INSERT INTO checkin_records (openid, day_number, task_id, proof) VALUES (?, ?, ?, ?)', [openid, day, task, proof]);
     
+    // 检查是否完成21天打卡，自动发放奖品
+    if (day === 21) {
+      const alreadyHas = await dbAsync.get('SELECT id FROM checkin_prizes WHERE openid = ?', [openid]);
+      if (!alreadyHas) {
+        const redeemCode = 'CK' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substr(2, 4).toUpperCase();
+        await dbAsync.run(
+          'INSERT INTO checkin_prizes (openid, prize_name, redeem_code) VALUES (?, ?, ?)',
+          [openid, '21天健康达人', redeemCode]
+        );
+        res.json({ success: true, prize: { name: '21天健康达人', redeem_code: redeemCode } });
+        return;
+      }
+    }
+    
     res.json({ success: true });
   } catch (err) {
     console.error('打卡错误:', err);
@@ -536,15 +550,54 @@ app.get('/api/checkin/progress', userAuth, async (req, res) => {
     const totalDays = 21;
     const completedDays = new Set(records.map(r => r.day_number)).size;
     
+    // 查询打卡奖品
+    const checkinPrize = await dbAsync.get('SELECT * FROM checkin_prizes WHERE openid = ?', [openid]);
+    
     res.json({
       totalDays,
       completedDays,
       progress: Math.round((completedDays / totalDays) * 100),
-      records
+      records,
+      checkinPrize
     });
   } catch (err) {
     res.status(500).json({ error: '获取进度失败' });
   }
+});
+
+// 获取打卡奖品列表（管理后台）
+app.get('/admin/api/checkin-prizes', authMiddleware, async (req, res) => {
+  const status = req.query.status || 'pending';
+  const { page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+  try {
+    const records = await dbAsync.all(`
+      SELECT cp.*, u.name, u.school, u.grade, u.class, u.phone
+      FROM checkin_prizes cp 
+      LEFT JOIN users u ON cp.openid = u.openid 
+      WHERE cp.prize_status = ?
+      ORDER BY cp.created_at DESC LIMIT ? OFFSET ?
+    `, [status, parseInt(limit), parseInt(offset)]);
+    
+    const total = await dbAsync.get('SELECT COUNT(*) as count FROM checkin_prizes WHERE prize_status = ?', [status]);
+    res.json({ data: records, total: total.count, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    console.error('获取打卡奖品失败:', err);
+    res.status(500).json({ error: '获取打卡奖品失败' });
+  }
+});
+
+// 核销打卡奖品
+app.put('/admin/api/checkin-prizes/:id', authMiddleware, async (req, res) => {
+  const { action } = req.body;
+  if (action === 'claim') {
+    await dbAsync.run('UPDATE checkin_prizes SET prize_status = \'claimed\', claimed_at = CURRENT_TIMESTAMP WHERE id = ?', [req.params.id]);
+  } else if (action === 'reject') {
+    await dbAsync.run('UPDATE checkin_prizes SET prize_status = \'rejected\' WHERE id = ?', [req.params.id]);
+  } else {
+    return res.status(400).json({ error: '无效操作' });
+  }
+  res.json({ success: true });
 });
 
 // ===== 管理后台API =====

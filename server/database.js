@@ -168,6 +168,18 @@ async function initDatabase() {
       )
     `);
 
+    await dbAsync.run(`
+      CREATE TABLE IF NOT EXISTS checkin_prizes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        openid TEXT NOT NULL UNIQUE,
+        prize_name TEXT NOT NULL,
+        prize_status TEXT DEFAULT 'pending',
+        redeem_code TEXT,
+        claimed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // 管理员表
     await dbAsync.exec(`
       CREATE TABLE IF NOT EXISTS admins (
