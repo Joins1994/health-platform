@@ -16,6 +16,7 @@
         <div style="display:flex;gap:8px;">
           <input type="text" id="search-input" placeholder="搜索姓名/学校/手机号..." style="padding:6px 12px;border:1px solid #ddd;border-radius:6px;width:240px;" oninput="loadUsers(1)">
           <button class="btn btn-outline btn-sm" onclick="exportUsers()">📥 导出CSV</button>
+          <button class="btn btn-outline btn-sm" style="color:#e74c3c;border-color:#e74c3c;" onclick="cleanupUsers()">🗑️ 清理无效用户</button>
         </div>
       </div>
 
@@ -30,9 +31,11 @@
                 <th>学校</th>
                 <th>年级</th>
                 <th>班级</th>
-                <th>答题次数</th>
-                <th>打卡天数</th>
+                <th>答题</th>
+                <th>打卡</th>
+                <th>作品</th>
                 <th>注册时间</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody id="users-table"></tbody>
@@ -43,11 +46,42 @@
     </div>
   </div>
 
+  <!-- 用户详情弹窗 -->
+  <div class="modal-overlay hidden" id="detail-modal">
+    <div class="modal-content" style="max-width:600px;">
+      <div class="modal-header">
+        <h3>用户详情</h3>
+        <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+      </div>
+      <div id="detail-content"></div>
+    </div>
+  </div>
+
+  <!-- 重置密码弹窗 -->
+  <div class="modal-overlay hidden" id="reset-modal">
+    <div class="modal-content" style="max-width:400px;">
+      <div class="modal-header">
+        <h3>重置密码</h3>
+        <button class="modal-close" onclick="closeResetModal()">&times;</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">用户</label>
+        <input type="text" class="form-input" id="reset-user-name" disabled>
+      </div>
+      <div class="form-group">
+        <label class="form-label">新密码</label>
+        <input type="password" class="form-input" id="reset-password" placeholder="请输入新密码（至少6位）">
+      </div>
+      <button class="btn btn-primary btn-block" onclick="doResetPassword()">确认重置</button>
+    </div>
+  </div>
+
   <script src="js/admin.js"></script>
   <script>
     if (!AdminAuth.checkAuth()) location.href = 'login.html';
 
     let currentPage = 1;
+    let resetUserId = null;
 
     async function loadUsers(page = 1) {
       currentPage = page;
@@ -58,7 +92,7 @@
         const tbody = document.getElementById('users-table');
         
         if (users.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无用户</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">暂无用户</td></tr>';
         } else {
           tbody.innerHTML = users.map(u => `
             <tr>
@@ -70,12 +104,85 @@
               <td>${u.class || '-'}</td>
               <td>${u.quiz_count || 0}</td>
               <td>${u.checkin_days || 0}</td>
+              <td>${u.works_count || 0}</td>
               <td>${AdminUtils.formatDate(u.created_at)}</td>
+              <td>
+                <button class="btn btn-outline btn-sm" onclick="viewUser(${u.id})">详情</button>
+                <button class="btn btn-outline btn-sm" onclick="showResetModal(${u.id}, '${u.name || ''}')">重置密码</button>
+                <button class="btn btn-outline btn-sm" style="color:#e74c3c;border-color:#e74c3c;" onclick="deleteUser(${u.id}, '${u.name || ''}')">删除</button>
+              </td>
             </tr>
           `).join('');
         }
         AdminUtils.renderPagination('pagination', total, page, limit, 'loadUsers');
       } catch (err) { console.error(err); }
+    }
+
+    async function viewUser(id) {
+      try {
+        const u = await AdminAPI.get(`/admin/api/users/${id}`);
+        const content = document.getElementById('detail-content');
+        content.innerHTML = `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+            <div><span class="text-muted text-sm">姓名：</span><strong>${u.name || '-'}</strong></div>
+            <div><span class="text-muted text-sm">手机号：</span>${u.phone || '-'}</div>
+            <div><span class="text-muted text-sm">学校：</span>${u.school || '-'}</div>
+            <div><span class="text-muted text-sm">班级：</span>${u.grade || ''} ${u.class || ''}</div>
+            <div><span class="text-muted text-sm">答题次数：</span>${u.quiz_count || 0}</div>
+            <div><span class="text-muted text-sm">打卡天数：</span>${u.checkin_days || 0}/21</div>
+            <div><span class="text-muted text-sm">作品数：</span>${u.works_count || 0}</div>
+            <div><span class="text-muted text-sm">注册时间：</span>${AdminUtils.formatDate(u.created_at)}</div>
+          </div>
+          ${u.recentCheckins && u.recentCheckins.length > 0 ? `
+            <div style="margin-bottom:16px;">
+              <h4 style="margin-bottom:8px;">最近打卡</h4>
+              <table style="font-size:0.85rem;">
+                <thead><tr><th>天数</th><th>任务</th><th>时间</th></tr></thead>
+                <tbody>${u.recentCheckins.map(c => `<tr><td>第${c.day_number}天</td><td>${c.task_title || '-'}</td><td>${AdminUtils.formatDate(c.created_at)}</td></tr>`).join('')}</tbody>
+              </table>
+            </div>
+          ` : ''}
+          ${u.recentQuiz && u.recentQuiz.length > 0 ? `
+            <div>
+              <h4 style="margin-bottom:8px;">最近答题</h4>
+              <table style="font-size:0.85rem;">
+                <thead><tr><th>分类</th><th>得分</th><th>奖品</th><th>时间</th></tr></thead>
+                <tbody>${u.recentQuiz.map(q => `<tr><td>${AdminUtils.getGradeLabel(q.category)}</td><td>${q.score}/${q.total}</td><td>${q.prize || '-'}</td><td>${AdminUtils.formatDate(q.created_at)}</td></tr>`).join('')}</tbody>
+              </table>
+            </div>
+          ` : ''}
+        `;
+        document.getElementById('detail-modal').classList.remove('hidden');
+      } catch (err) { AdminUtils.showToast('加载失败', 'error'); }
+    }
+
+    function closeDetailModal() {
+      document.getElementById('detail-modal').classList.add('hidden');
+    }
+
+    function showResetModal(id, name) {
+      resetUserId = id;
+      document.getElementById('reset-user-name').value = name;
+      document.getElementById('reset-password').value = '';
+      document.getElementById('reset-modal').classList.remove('hidden');
+    }
+
+    function closeResetModal() {
+      document.getElementById('reset-modal').classList.add('hidden');
+      resetUserId = null;
+    }
+
+    async function doResetPassword() {
+      const pwd = document.getElementById('reset-password').value;
+      if (!pwd || pwd.length < 6) {
+        AdminUtils.showToast('密码至少6位', 'error');
+        return;
+      }
+      try {
+        await AdminAPI.post(`/admin/api/users/${resetUserId}/reset-password`, { newPassword: pwd });
+        AdminUtils.showToast('密码重置成功');
+        closeResetModal();
+      } catch (err) { AdminUtils.showToast(err.message || '重置失败', 'error'); }
     }
 
     async function exportUsers() {
@@ -84,6 +191,58 @@
         AdminUtils.exportCSV('用户列表', ['ID','姓名','手机号','学校','年级','班级','答题次数','打卡天数','注册时间'],
           result.data.map(u => [u.id, u.name, u.phone, u.school, u.grade, u.class, u.quiz_count, u.checkin_days, u.created_at]));
       } catch (err) { AdminUtils.showToast('导出失败', 'error'); }
+    }
+
+    async function deleteUser(id, name) {
+      if (!confirm(`确定要删除用户"${name}"吗？该用户的所有数据（答题、打卡、作品）将被永久删除。`)) return;
+      try {
+        await AdminAPI.delete(`/admin/api/users/${id}`);
+        AdminUtils.showToast('删除成功');
+        loadUsers(currentPage);
+      } catch (err) { AdminUtils.showToast(err.message || '删除失败', 'error'); }
+    }
+
+    async function cleanupUsers() {
+      try {
+        // 第一步：预览待清理数据
+        const users = await AdminAPI.get('/admin/api/users/cleanup-preview');
+        
+        if (!users || users.length === 0) {
+          AdminUtils.showToast('没有需要清理的无效用户', 'success');
+          return;
+        }
+        
+        // 显示预览列表
+        const list = users.slice(0, 10).map(u => 
+          `ID:${u.id} | 注册:${u.created_at ? u.created_at.split('T')[0] : '-'} | 答题:${u.quiz_count || 0} | 打卡:${u.checkin_count || 0}`
+        ).join('\n');
+        const more = users.length > 10 ? `\n...等共 ${users.length} 条` : '';
+        
+        const confirmed = confirm(
+          `【危险操作】即将清理 ${users.length} 条无效用户数据\n` +
+          `清理条件：同时没有手机号、密码、姓名的旧数据\n\n` +
+          `待清理数据（前10条）：\n${list}${more}\n\n` +
+          `请输入数字 ${users.length} 确认删除：`
+        );
+        if (!confirmed) return;
+        
+        const input = prompt(`请输入 ${users.length} 确认删除这批数据：`);
+        if (input !== String(users.length)) {
+          AdminUtils.showToast('数量不匹配，已取消操作');
+          return;
+        }
+        
+        // 第二步：执行清理
+        const result = await AdminAPI.post('/admin/api/users/cleanup', { confirmCount: users.length });
+        AdminUtils.showToast(`清理完成，删除了 ${result.deleted} 条无效数据`);
+        loadUsers(1);
+      } catch (err) {
+        if (err.message && err.message.includes('确认数量不匹配')) {
+          AdminUtils.showToast(err.message, 'error');
+        } else {
+          AdminUtils.showToast(err.message || '清理失败', 'error');
+        }
+      }
     }
 
     loadUsers();

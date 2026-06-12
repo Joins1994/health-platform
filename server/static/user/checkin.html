@@ -147,12 +147,24 @@
     }
 
     function getCurrentDay() {
-      // 获取当前是第几天（从活动开始日期计算）
-      // 这里简化处理，返回当前应该打卡的天数
-      const startDate = new Date('2026-06-01');
-      const today = new Date();
-      const diff = Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
-      return Math.max(1, Math.min(21, diff));
+      // 基于用户已完成打卡数计算当前应打卡天数
+      // 如果从未打卡，从第1天开始；否则从已完成天数+1开始
+      if (completedDays.size === 0) return 1;
+      const maxDay = Math.max(...completedDays);
+      // 如果今天已打卡，显示下一天；否则显示当前未完成的天
+      if (completedDays.has(maxDay) && maxDay < 21) {
+        // 检查是否所有之前的天都完成了
+        let allPreviousDone = true;
+        for (let i = 1; i <= maxDay; i++) {
+          if (!completedDays.has(i)) { allPreviousDone = false; break; }
+        }
+        if (allPreviousDone) return maxDay + 1;
+      }
+      // 找到第一个未完成的天
+      for (let i = 1; i <= 21; i++) {
+        if (!completedDays.has(i)) return i;
+      }
+      return 21; // 全部完成
     }
 
     function showTodayTask() {
@@ -209,20 +221,8 @@
         
         if (result.success) {
           Utils.showToast('打卡成功！');
-          completedDays.add(dayNumber);
-          renderCheckinGrid();
-          showDayTask(dayNumber);
-          
-          // 更新进度
-          const completed = completedDays.size;
-          document.getElementById('completed-days').textContent = completed;
-          const percent = Math.round((completed / 21) * 100);
-          document.getElementById('progress-percent').textContent = percent + '%';
-          document.getElementById('progress-bar').style.width = percent + '%';
-          
-          if (percent >= 100) {
-            document.getElementById('achievement-badge').classList.remove('hidden');
-          }
+          // 从后端重新获取进度，确保多设备同步
+          await loadProgress();
         }
       } catch (err) {
         Utils.showToast(err.message || '打卡失败', 'error');
