@@ -88,6 +88,7 @@
       const keyword = document.getElementById('search-input').value.trim();
       try {
         const result = await AdminAPI.get(`/admin/api/users?page=${page}&limit=20&keyword=${encodeURIComponent(keyword)}`);
+        if (!result) return;
         const { data: users, total, limit } = result;
         const tbody = document.getElementById('users-table');
         
