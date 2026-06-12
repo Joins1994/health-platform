@@ -707,9 +707,11 @@ app.get('/admin/api/questions/template', authMiddleware, async (req, res) => {
     const wb = XLSX.utils.book_new();
     const data = [
       ['分类', '题型', '题目', '选项A', '选项B', '选项C', '选项D', '正确答案', '解析'],
-      ['primary_low', 'single', '每天应该刷几次牙？', '1次', '2次', '3次', '不用刷', 'B', '早晚各刷一次牙。'],
-      ['primary_low', 'judge', '看电视时可以离电视很近。', '正确', '错误', '', '', 'B', '应该保持适当距离。'],
-      ['primary_high', 'single', '以下哪种做法有利于保护视力？', '长时间看手机', '多做户外运动', '在暗处看书', '躺着看书', 'B', '每天2小时以上户外活动可有效预防近视。']
+      ['小学低年级', '单选题', '每天应该刷几次牙？', '1次', '2次', '3次', '不用刷', 'B', '早晚各刷一次牙。'],
+      ['小学低年级', '判断题', '看电视时可以离电视很近。', '正确', '错误', '', '', 'B', '应该保持适当距离。'],
+      ['小学高年级', '单选题', '以下哪种做法有利于保护视力？', '长时间看手机', '多做户外运动', '在暗处看书', '躺着看书', 'B', '每天2小时以上户外活动可有效预防近视。'],
+      ['初中', '单选题', '以下哪种情绪调节方法最健康？', '压抑情绪', '运动发泄', '暴饮暴食', '熬夜打游戏', 'B', '适当运动是健康的减压方式。'],
+      ['高中', '多选题', '以下哪些是科学减压的方法？（多选）', '规律运动', '充足睡眠', '暴饮暴食', '过度熬夜', 'AB', '规律运动和充足睡眠是科学减压方法。']
     ];
     const ws = XLSX.utils.aoa_to_sheet(data);
     // 设置列宽
@@ -720,7 +722,8 @@ app.get('/admin/api/questions/template', authMiddleware, async (req, res) => {
     const buf = XLSX.write(wb, {type:'buffer', bookType:'xlsx'});
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=question_template.xlsx');
-    res.send(buf);
+    res.setHeader('Content-Length', buf.length);
+    res.end(buf);
   } catch (err) {
     console.error('下载模板失败:', err);
     res.status(500).json({ error: '下载模板失败' });
@@ -760,16 +763,30 @@ app.post('/admin/api/questions/import', authMiddleware, upload.single('file'), a
       const answer = String(row[7]).trim();
       const explanation = String(row[8] || '').trim();
       
+      // 中文映射
+      const categoryMap = {
+        '小学低年级': 'primary_low', '小学高年级': 'primary_high',
+        '初中': 'middle', '高中': 'high',
+        'primary_low': 'primary_low', 'primary_high': 'primary_high',
+        'middle': 'middle', 'high': 'high'
+      };
+      const typeMap = {
+        '单选题': 'single', '多选题': 'multi', '判断题': 'judge',
+        'single': 'single', 'multi': 'multi', 'judge': 'judge'
+      };
+      
+      const mappedCategory = categoryMap[category];
+      const mappedType = typeMap[type];
+      
       // 校验分类
-      const validCategories = ['primary_low', 'primary_high', 'middle', 'high'];
-      if (!validCategories.includes(category)) {
-        errors.push(`第${i + 2}行：分类无效，应为 ${validCategories.join('/')}`);
+      if (!mappedCategory) {
+        errors.push(`第${i + 2}行：分类无效，应为 小学低年级/小学高年级/初中/高中`);
         continue;
       }
       
       // 校验题型
-      if (!['single', 'judge', 'multi'].includes(type)) {
-        errors.push(`第${i + 2}行：题型无效，应为 single/judge/multi`);
+      if (!mappedType) {
+        errors.push(`第${i + 2}行：题型无效，应为 单选题/多选题/判断题`);
         continue;
       }
       
@@ -782,7 +799,7 @@ app.post('/admin/api/questions/import', authMiddleware, upload.single('file'), a
       
       await dbAsync.run(
         'INSERT INTO questions (category, type, question, options, answer, explanation) VALUES (?, ?, ?, ?, ?, ?)',
-        [category, type, question, JSON.stringify(options), answer, explanation]
+        [mappedCategory, mappedType, question, JSON.stringify(options), answer, explanation]
       );
       imported++;
     }

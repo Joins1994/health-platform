@@ -206,11 +206,23 @@
     }
 
     function downloadTemplate() {
-      const token = AdminAuth.getToken();
-      const link = document.createElement('a');
-      link.href = `/admin/api/questions/template?token=${token}`;
-      link.download = '题库导入模板.xlsx';
-      link.click();
+      fetch('/admin/api/questions/template', {
+        headers: { 'Authorization': `Bearer ${AdminAuth.getToken()}` }
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('下载失败');
+        return res.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '题库导入模板.xlsx';
+        a.click();
+        URL.revokeObjectURL(url);
+        AdminUtils.showToast('模板下载成功');
+      })
+      .catch(err => AdminUtils.showToast('下载失败: ' + err.message, 'error'));
     }
 
     async function importExcel(event) {
