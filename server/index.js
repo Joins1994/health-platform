@@ -53,12 +53,12 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.xlsx', '.xls'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('仅支持上传图片（jpg/png/gif/webp）'));
+      cb(new Error('仅支持上传图片（jpg/png/gif/webp）或Excel文件（xlsx/xls）'));
     }
   }
 });
