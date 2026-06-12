@@ -121,6 +121,11 @@
     async function viewUser(id) {
       try {
         const u = await AdminAPI.get(`/admin/api/users/${id}`);
+        if (!u || !u.id) {
+          AdminUtils.showToast('用户不存在', 'error');
+          loadUsers(currentPage);
+          return;
+        }
         const content = document.getElementById('detail-content');
         content.innerHTML = `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
@@ -199,7 +204,14 @@
         await AdminAPI.delete(`/admin/api/users/${id}`);
         AdminUtils.showToast('删除成功');
         loadUsers(currentPage);
-      } catch (err) { AdminUtils.showToast(err.message || '删除失败', 'error'); }
+      } catch (err) {
+        if (err.message && err.message.includes('不存在')) {
+          AdminUtils.showToast('用户已不存在', 'error');
+          loadUsers(currentPage);
+        } else {
+          AdminUtils.showToast(err.message || '删除失败', 'error');
+        }
+      }
     }
 
     async function cleanupUsers() {

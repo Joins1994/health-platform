@@ -38,8 +38,11 @@ const AdminAPI = {
       }
       return res.json();
     } catch (err) {
-      if (err.message.includes('请求失败') || err.message.includes('网络')) throw err;
-      throw new Error(`网络错误: ${err.message}`);
+      // 只对真正的网络异常包装，服务端错误直接透传
+      if (err.message === 'Failed to fetch') {
+        throw new Error('网络连接失败，请检查网络');
+      }
+      throw err;
     }
   },
 
@@ -60,8 +63,10 @@ const AdminAPI = {
       }
       return res.json();
     } catch (err) {
-      if (err.message.includes('请求失败') || err.message.includes('网络')) throw err;
-      throw new Error(`网络错误: ${err.message}`);
+      if (err.message === 'Failed to fetch') {
+        throw new Error('网络连接失败，请检查网络');
+      }
+      throw err;
     }
   },
 
@@ -82,8 +87,10 @@ const AdminAPI = {
       }
       return res.json();
     } catch (err) {
-      if (err.message.includes('请求失败') || err.message.includes('网络')) throw err;
-      throw new Error(`网络错误: ${err.message}`);
+      if (err.message === 'Failed to fetch') {
+        throw new Error('网络连接失败，请检查网络');
+      }
+      throw err;
     }
   },
 
@@ -100,8 +107,10 @@ const AdminAPI = {
       }
       return res.json();
     } catch (err) {
-      if (err.message.includes('请求失败') || err.message.includes('网络')) throw err;
-      throw new Error(`网络错误: ${err.message}`);
+      if (err.message === 'Failed to fetch') {
+        throw new Error('网络连接失败，请检查网络');
+      }
+      throw err;
     }
   }
 };
