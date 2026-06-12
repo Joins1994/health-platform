@@ -178,20 +178,23 @@
       
       const task = dayTasks[0];
       const isCompleted = completedDays.has(day);
-      const isToday = day === getCurrentDay();
+      const currentDay = getCurrentDay();
+      const isToday = day === currentDay;
+      const canCheckin = !isCompleted && isToday;
       
       const content = document.getElementById('today-task-content');
       content.innerHTML = `
         <div style="margin-bottom:12px;">
-          <span class="badge ${isToday ? 'badge-accent' : 'badge-primary'}">
+          <span class="badge ${isToday && !isCompleted ? 'badge-accent' : 'badge-primary'}">
             第${day}天
           </span>
           ${isCompleted ? '<span class="badge badge-primary">已完成</span>' : ''}
+          ${!isCompleted && !isToday ? '<span class="badge badge-outline">未解锁</span>' : ''}
         </div>
         <h3 style="margin-bottom:8px;">${task.title}</h3>
         <p class="text-muted mb-2">${task.description}</p>
         
-        ${!isCompleted ? `
+        ${canCheckin ? `
           <div class="form-group">
             <label class="form-label">打卡备注（可选）</label>
             <textarea class="form-textarea" id="checkin-note" rows="2" placeholder="记录一下今天的完成情况..."></textarea>
@@ -199,9 +202,13 @@
           <button class="btn btn-primary btn-block" onclick="doCheckin(${day}, ${task.id})">
             ✅ 立即打卡
           </button>
-        ` : `
+        ` : isCompleted ? `
           <div class="alert alert-success">
             ✅ 已完成打卡！继续保持！
+          </div>
+        ` : `
+          <div class="alert" style="background:#f5f5f5;color:#999;">
+            🔒 请按顺序完成打卡，当前需要完成第${currentDay}天
           </div>
         `}
       `;

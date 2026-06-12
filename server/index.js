@@ -489,6 +489,30 @@ app.post('/api/checkin', userAuth, upload.single('proof'), async (req, res) => {
       return res.status(400).json({ error: '天数无效' });
     }
     
+    // 每天只能打卡一次（基于自然日）
+    const today = new Date().toISOString().slice(0, 10);
+    const todayRecord = await dbAsync.get(
+      'SELECT id FROM checkin_records WHERE openid = ? AND date(created_at) = ?', 
+      [openid, today]
+    );
+    if (todayRecord) {
+      return res.status(400).json({ error: '今天已经打卡了，明天再来吧' });
+    }
+    
+    // 必须按顺序打卡：只能打卡下一个未完成的天
+    const completed = await dbAsync.all('SELECT day_number FROM checkin_records WHERE openid = ?', [openid]);
+    const completedSet = new Set(completed.map(c => c.day_number));
+    let nextDay = 1;
+    for (let i = 1; i <= 21; i++) {
+      if (!completedSet.has(i)) { nextDay = i; break; }
+    }
+    if (completedSet.size >= 21) {
+      return res.status(400).json({ error: '已完成全部21天打卡' });
+    }
+    if (day !== nextDay) {
+      return res.status(400).json({ error: `请先完成第${nextDay}天的打卡` });
+    }
+    
     const existing = await dbAsync.get('SELECT id FROM checkin_records WHERE openid = ? AND day_number = ? AND task_id = ?', [openid, day, task]);
     if (existing) {
       return res.status(400).json({ error: '今天已经打卡了' });
